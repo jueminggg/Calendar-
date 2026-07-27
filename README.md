@@ -130,11 +130,9 @@ per-connection through the UI and stored encrypted in the database.
    your `https://your-app.vercel.app` domain, generated `SESSION_SECRET` /
    `ENCRYPTION_KEY` / `SIGNUP_SECRET` / `CRON_SECRET`, plus the Google/
    Microsoft values from steps 2–3 once you have them).
-4. Deploy. Then run the initial migration against the production database
-   once (from your machine, with `DATABASE_URL` pointed at Neon):
-   ```bash
-   npx prisma migrate deploy
-   ```
+4. Deploy. The build command (`prisma migrate deploy && next build`) applies
+   any pending database migrations automatically on every deploy — nothing
+   to run by hand.
 5. Go back into Google Cloud Console / Azure and add your real
    `https://your-app.vercel.app/api/connections/.../callback` redirect URIs
    (you can add multiple redirect URIs, so keep the localhost one too).
