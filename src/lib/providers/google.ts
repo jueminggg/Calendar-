@@ -1,10 +1,14 @@
 import { google } from "googleapis";
 import type { calendar_v3 } from "googleapis";
-import { OAuth2Client } from "google-auth-library";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 import type { CalendarConnection } from "@/generated/prisma/client";
 import type { NormalizedEvent, ProviderSyncResult } from "@/lib/sync/types";
+
+// Derived from the constructor we actually use, rather than imported from
+// google-auth-library directly, to avoid a duplicate-package type mismatch
+// with the nested copy googleapis-common depends on internally.
+export type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
 export const GOOGLE_SCOPES = [
   "openid",
@@ -141,12 +145,12 @@ export async function fetchGoogleEvents(
   let nextSyncToken: string | undefined;
   let wasFullResync = false;
 
-  const doFetch = async (useSyncToken: string | null) => {
+  const doFetch = async (useSyncToken: string | null): Promise<void> => {
     events.length = 0;
     deletedExternalIds.length = 0;
     pageToken = undefined;
     do {
-      const { data } = await calendar.events.list({
+      const res = await calendar.events.list({
         calendarId,
         syncToken: useSyncToken ?? undefined,
         timeMin: useSyncToken ? undefined : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -155,6 +159,7 @@ export async function fetchGoogleEvents(
         maxResults: 250,
         pageToken,
       });
+      const data: calendar_v3.Schema$Events = res.data;
 
       for (const item of data.items ?? []) {
         if (item.status === "cancelled") {

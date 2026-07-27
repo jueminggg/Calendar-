@@ -49,7 +49,7 @@ export async function syncAppleConnection(connectionId: string, isInitialSync = 
       });
       const deletedExternalIds = existing
         .map((e) => e.externalId)
-        .filter((id): id is string => Boolean(id) && !fetchedIds.has(id));
+        .filter((id): id is string => id != null && !fetchedIds.has(id));
 
       await syncCalendarEvents({
         userId: connection.userId,

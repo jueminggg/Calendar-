@@ -85,7 +85,7 @@ export function parseIcsEvent(icsData: string, objectUrl: string): NormalizedEve
       startAt: event.startDate.toJSDate(),
       endAt: event.endDate.toJSDate(),
       allDay: event.startDate.isDate,
-      timezone: event.startDate.timezone || "UTC",
+      timezone: event.startDate.zone?.tzid || "UTC",
       status,
       organizer,
       attendees,
