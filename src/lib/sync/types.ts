@@ -1,4 +1,4 @@
-import type { EventStatus } from "@/generated/prisma/enums";
+import type { EventStatus } from "@prisma/client";
 
 export type NormalizedAttendee = {
   email: string;

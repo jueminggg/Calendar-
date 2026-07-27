@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import type { calendar_v3 } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
-import type { CalendarConnection } from "@/generated/prisma/client";
+import type { CalendarConnection } from "@prisma/client";
 import type { NormalizedEvent, ProviderSyncResult } from "@/lib/sync/types";
 
 // Derived from the constructor we actually use, rather than imported from

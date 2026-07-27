@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { EventSource } from "@/generated/prisma/enums";
+import type { EventSource } from "@prisma/client";
 import type { NormalizedEvent, ProviderSyncResult } from "./types";
 
 type SyncEventsArgs = {

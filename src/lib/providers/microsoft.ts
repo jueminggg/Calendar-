@@ -1,7 +1,7 @@
 import { ConfidentialClientApplication, type AccountInfo } from "@azure/msal-node";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
-import type { CalendarConnection } from "@/generated/prisma/client";
+import type { CalendarConnection } from "@prisma/client";
 import type { NormalizedEvent, ProviderSyncResult } from "@/lib/sync/types";
 
 export const MICROSOFT_SCOPES = ["openid", "email", "profile", "offline_access", "Calendars.Read"];

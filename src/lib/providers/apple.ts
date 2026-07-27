@@ -1,7 +1,7 @@
 import { DAVClient } from "tsdav";
 import ICAL from "ical.js";
 import { decrypt } from "@/lib/crypto";
-import type { CalendarConnection } from "@/generated/prisma/client";
+import type { CalendarConnection } from "@prisma/client";
 import type { NormalizedEvent } from "@/lib/sync/types";
 
 const DEFAULT_SERVER_URL = "https://caldav.icloud.com";

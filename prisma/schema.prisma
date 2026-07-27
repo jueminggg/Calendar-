@@ -1,9 +1,13 @@
 // Prisma schema for the cross-platform calendar sync app.
 // Learn more: https://pris.ly/d/prisma-schema
 
+// The classic prisma-client-js generator outputs into node_modules, where
+// Next.js/Vercel already special-case @prisma/client for serverless
+// deployment (it's in their built-in serverExternalPackages list). The
+// newer prisma-client generator's custom output path doesn't get that
+// same treatment, which is what caused the query-engine-not-found errors.
 generator client {
-  provider      = "prisma-client"
-  output        = "../src/generated/prisma"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
