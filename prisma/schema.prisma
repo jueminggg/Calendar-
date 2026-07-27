@@ -1,0 +1,187 @@
+// Prisma schema for the cross-platform calendar sync app.
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  GOOGLE
+  MICROSOFT
+  APPLE
+}
+
+enum EventSource {
+  GOOGLE
+  MICROSOFT
+  APPLE
+  NATIVE
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum EventStatus {
+  CONFIRMED
+  TENTATIVE
+  CANCELLED
+}
+
+enum NotificationType {
+  INVITE
+  UPDATE
+  CANCELLATION
+  CONNECTION_ERROR
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connections   CalendarConnection[]
+  events        Event[]
+  notifications Notification[]
+}
+
+/// One connected external account (a Google account, a Microsoft account, or an
+/// iCloud CalDAV credential). A single connection can expose multiple calendars.
+model CalendarConnection {
+  id       String           @id @default(cuid())
+  userId   String
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider
+  label    String
+  status   ConnectionStatus @default(ACTIVE)
+  lastSyncAt   DateTime?
+  lastError    String?
+
+  // OAuth (Google / Microsoft)
+  accessToken  String?  @db.Text
+  refreshToken String?  @db.Text // Google: refresh token. Microsoft: serialized MSAL token cache.
+  tokenExpiresAt DateTime?
+  scope        String?
+  providerAccountId String? // Microsoft: MSAL homeAccountId, needed for acquireTokenSilent
+
+  // CalDAV (Apple iCloud)
+  caldavUsername  String?
+  caldavPassword  String? @db.Text // encrypted at rest, see src/lib/crypto.ts
+  caldavServerUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calendars       CalendarList[]
+  webhookChannels WebhookChannel[]
+
+  @@unique([userId, provider, label])
+  @@index([userId])
+}
+
+/// An individual calendar within a connection (e.g. "Work", "Family", "Holidays").
+model CalendarList {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  externalId   String             // Google calendarId / Graph calendar id / CalDAV calendar URL
+  name         String
+  color        String?
+  isPrimary    Boolean            @default(false)
+  enabled      Boolean            @default(true)
+
+  // Sync cursor, provider-specific: Google syncToken, Graph deltaLink, CalDAV ctag/sync-token
+  syncCursor String?   @db.Text
+  lastSyncAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId])
+}
+
+/// A calendar event. Either mirrored from an external provider (source != NATIVE,
+/// externalId set) or created directly in this app (source == NATIVE).
+model Event {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendarListId String?
+  calendarList   CalendarList? @relation(fields: [calendarListId], references: [id], onDelete: Cascade)
+
+  source     EventSource
+  externalId String? // provider's event id, null for NATIVE events
+  icalUid    String? // iCalendar UID, correlates the same event across providers/invites
+
+  title       String
+  description String?     @db.Text
+  location    String?
+  startAt     DateTime
+  endAt       DateTime
+  allDay      Boolean     @default(false)
+  timezone    String      @default("UTC")
+  status      EventStatus @default(CONFIRMED)
+
+  organizer         String?
+  attendees         Json?   // [{ email, name, responseStatus }]
+  recurrenceRule    String?
+  recurringEventId  String? // externalId of the parent recurring event, if this is an instance
+
+  providerUpdatedAt DateTime? // provider's own "last modified", used to detect edits
+  providerEtag      String?
+  raw               Json?     // original provider payload, kept for debugging/re-sync
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  @@unique([calendarListId, externalId])
+  @@index([userId, startAt])
+  @@index([icalUid])
+}
+
+/// A subscription to provider push notifications (Google watch channel / Microsoft
+/// Graph subscription). Apple/CalDAV has no push mechanism and is polled instead.
+model WebhookChannel {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  provider     Provider
+  channelId    String // Google channel id / Graph subscription id
+  resourceId   String? // Google resourceId
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([connectionId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String?
+  event     Event?           @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  type      NotificationType
+  title     String
+  body      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+}
