@@ -1,36 +1,158 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Calendar
 
-## Getting Started
+A private, cross-platform scheduling app: it pulls your Google Calendar,
+Outlook/Microsoft 365 Calendar, and Apple iCloud Calendar into one unified
+view, notifies you when someone invites or edits an event on any of them, and
+gives you an independent "native" calendar of your own — create an event
+here and it's instantly visible on every device you're signed into (laptop,
+iPad, phone), since it's all one web app backed by one database.
 
-First, run the development server:
+It's a normal web app (installable as a PWA), not three separate native
+apps — that's what makes "works on my laptop, iPad, and phone" simple: one
+deployment, one login, one URL.
+
+## How it works
+
+- **Next.js** app (this repo) — UI + API routes, deployed to Vercel.
+- **Postgres** — stores your events, connections, and notifications.
+- **Google Calendar API** — OAuth, incremental sync via sync tokens, and
+  push-notification "watch" channels for near-real-time updates.
+- **Microsoft Graph API** — OAuth (MSAL), delta-query sync, and change
+  subscriptions (webhooks).
+- **Apple iCloud** — CalDAV with an app-specific password (Apple has no
+  consumer OAuth API for iCloud calendars), polled on a schedule since
+  CalDAV has no push mechanism.
+- **A cron-triggered poll** (`/api/cron/sync`) is the reliability backbone —
+  it re-syncs every connected calendar on a schedule, so invites/edits show
+  up even if a webhook was missed, expired, or was never set up. Webhooks
+  are a nice-to-have for speed, not a requirement.
+
+**Known limitation (v1):** editing or deleting an event that was synced
+*from* Google/Outlook/iCloud has to happen on the original calendar — this
+app doesn't write back to them yet. Events you create directly in this app
+("native" events, shown in green) are fully editable here. Recurring iCloud
+events also aren't expanded into individual instances the way Google/Outlook
+events are (a CalDAV/ical.js limitation) — you'll see the recurring series'
+first occurrence only.
+
+## 1. Local development
+
+Prerequisites: Node 20+, a Postgres database (local or a free
+[Neon](https://neon.tech)/[Supabase](https://supabase.com) instance).
 
 ```bash
+npm install
+cp .env.example .env
+# fill in DATABASE_URL, SESSION_SECRET, ENCRYPTION_KEY, SIGNUP_SECRET
+# (openssl rand -hex 32   -- for the two secrets)
+
+npx prisma migrate deploy   # creates the database tables
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000, click **Sign up**, and use the `SIGNUP_SECRET`
+value you set as the invite code. You can use the calendar and create native
+events immediately — connecting Google/Outlook/iCloud needs the setup below.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 2. Connect Google Calendar
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and
+   create a new project (top-left project picker → **New Project**).
+2. **APIs & Services → Library** → search **Google Calendar API** → **Enable**.
+3. **APIs & Services → OAuth consent screen**:
+   - User type: **External** (unless you have a Google Workspace account).
+   - Fill in an app name, your email as support/developer contact.
+   - Under **Test users**, add your own Google account's email. While the
+     app is in "Testing" mode, only accounts listed here can sign in — this
+     is fine and expected for a personal app; you don't need Google to
+     verify/publish it.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
+   - Application type: **Web application**.
+   - **Authorized redirect URIs**: add
+     `https://YOUR_DOMAIN/api/connections/google/callback`
+     (and, for local testing, `http://localhost:3000/api/connections/google/callback`).
+   - Save, then copy the **Client ID** and **Client Secret**.
+5. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in your environment.
 
-## Learn More
+Real-time push notifications (Google "watch" channels) require Google to be
+able to reach `APP_URL/api/webhooks/google` over HTTPS — this works
+automatically once you're deployed with a real domain. Until then (or if you
+skip this), the cron poll keeps things in sync every few minutes regardless.
 
-To learn more about Next.js, take a look at the following resources:
+## 3. Connect Outlook / Microsoft 365
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Go to the [Azure Portal](https://portal.azure.com/) →
+   **Microsoft Entra ID → App registrations → New registration**.
+2. Name it anything. Under **Supported account types**, choose
+   **Accounts in any organizational directory and personal Microsoft
+   accounts** (unless you specifically want to restrict it to one org/tenant).
+3. **Redirect URI**: platform **Web**,
+   `https://YOUR_DOMAIN/api/connections/microsoft/callback`
+   (add `http://localhost:3000/api/connections/microsoft/callback` too for
+   local testing).
+4. After creation, copy the **Application (client) ID** — that's your
+   `MICROSOFT_CLIENT_ID`.
+5. **Certificates & secrets → New client secret** → copy the secret's
+   **value** immediately (it's hidden after you leave the page) — that's
+   `MICROSOFT_CLIENT_SECRET`.
+6. **API permissions → Add a permission → Microsoft Graph → Delegated
+   permissions** → add `Calendars.Read`, `offline_access`, `openid`,
+   `email`, `profile` (these match the scopes the app requests).
+7. Leave `MICROSOFT_TENANT_ID` unset to allow both personal and work/school
+   Microsoft accounts to sign in, or set it to your tenant ID to restrict to
+   one organization.
+8. Generate a random `MICROSOFT_WEBHOOK_SECRET` (`openssl rand -hex 16`) —
+   it's used to verify Graph webhook calls are genuinely from Microsoft.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 4. Connect Apple iCloud
 
-## Deploy on Vercel
+No app registration needed — Apple doesn't offer OAuth for iCloud calendars,
+so this uses CalDAV with an **app-specific password** instead of your real
+Apple ID password:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Go to [appleid.apple.com](https://appleid.apple.com) → sign in →
+   **Sign-In and Security → App-Specific Passwords → Generate**.
+2. Give it a label like "Calendar sync" and copy the generated password
+   (format `xxxx-xxxx-xxxx-xxxx`).
+3. In the app, go to **Connections → Connect iCloud**, enter your iCloud
+   email and that app-specific password.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+No environment variables are needed for Apple — credentials are entered
+per-connection through the UI and stored encrypted in the database.
+
+## 5. Deploying to Vercel + Neon
+
+1. Create a free Postgres database at [neon.tech](https://neon.tech) (or
+   Supabase) and copy its connection string.
+2. Push this repo to GitHub, then [import it into Vercel](https://vercel.com/new).
+3. In the Vercel project's **Settings → Environment Variables**, add every
+   variable from `.env.example` (`DATABASE_URL` from Neon, `APP_URL` set to
+   your `https://your-app.vercel.app` domain, generated `SESSION_SECRET` /
+   `ENCRYPTION_KEY` / `SIGNUP_SECRET` / `CRON_SECRET`, plus the Google/
+   Microsoft values from steps 2–3 once you have them).
+4. Deploy. Then run the initial migration against the production database
+   once (from your machine, with `DATABASE_URL` pointed at Neon):
+   ```bash
+   npx prisma migrate deploy
+   ```
+5. Go back into Google Cloud Console / Azure and add your real
+   `https://your-app.vercel.app/api/connections/.../callback` redirect URIs
+   (you can add multiple redirect URIs, so keep the localhost one too).
+
+**About the sync cron:** `vercel.json` schedules `/api/cron/sync` every 10
+minutes. Vercel's **Hobby** plan limits cron jobs to once a day — if you're
+on Hobby, either upgrade to Pro, or point a free external scheduler (e.g.
+[cron-job.org](https://cron-job.org) or a GitHub Actions scheduled workflow)
+at `https://your-app.vercel.app/api/cron/sync` with header
+`Authorization: Bearer YOUR_CRON_SECRET` instead.
+
+## 6. Installing it on your devices
+
+Once deployed, open the app's URL in your browser on each device:
+
+- **iPad/iPhone (Safari):** Share button → **Add to Home Screen**.
+- **Android (Chrome):** menu → **Install app** / **Add to Home screen**.
+- **Laptop (Chrome/Edge):** address bar → install icon → **Install**.
+
+It'll open full-screen like a native app, using the icon and name from
+`public/manifest.webmanifest`.
