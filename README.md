@@ -77,7 +77,8 @@ events immediately — connecting Google/Outlook/iCloud needs the setup below.
 Real-time push notifications (Google "watch" channels) require Google to be
 able to reach `APP_URL/api/webhooks/google` over HTTPS — this works
 automatically once you're deployed with a real domain. Until then (or if you
-skip this), the cron poll keeps things in sync every few minutes regardless.
+skip this), the daily cron poll (see "About the sync cron" below) keeps
+things in sync as a fallback, just less instantly.
 
 ## 3. Connect Outlook / Microsoft 365
 
@@ -137,12 +138,19 @@ per-connection through the UI and stored encrypted in the database.
    `https://your-app.vercel.app/api/connections/.../callback` redirect URIs
    (you can add multiple redirect URIs, so keep the localhost one too).
 
-**About the sync cron:** `vercel.json` schedules `/api/cron/sync` every 10
-minutes. Vercel's **Hobby** plan limits cron jobs to once a day — if you're
-on Hobby, either upgrade to Pro, or point a free external scheduler (e.g.
-[cron-job.org](https://cron-job.org) or a GitHub Actions scheduled workflow)
-at `https://your-app.vercel.app/api/cron/sync` with header
-`Authorization: Bearer YOUR_CRON_SECRET` instead.
+**About the sync cron:** `vercel.json` schedules `/api/cron/sync` once a day,
+since Vercel's **Hobby** plan rejects crons that run more often than that (a
+more frequent schedule here will make every deployment fail validation). The
+daily run is just a safety net — Google and Microsoft mostly keep things
+current in real time via their push-notification webhooks once `APP_URL` is
+a real HTTPS domain, and there's a manual **"Sync now"** button per
+connection on the Connections page for anytime in between. If you want
+tighter polling than once a day (e.g. to cover Apple/iCloud, which has no
+push mechanism and only ever gets updated by this poll), either upgrade to
+Vercel Pro, or point a free external scheduler — e.g.
+[cron-job.org](https://cron-job.org) or a GitHub Actions scheduled workflow —
+at `https://your-app.vercel.app/api/cron/sync` every 10–15 minutes with
+header `Authorization: Bearer YOUR_CRON_SECRET`.
 
 ## 6. Installing it on your devices
 
