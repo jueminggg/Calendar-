@@ -9,7 +9,7 @@ export const MICROSOFT_SCOPES = ["openid", "email", "profile", "offline_access",
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 function requireEnv(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} environment variable is not set`);
   return value;
 }
@@ -226,7 +226,7 @@ export async function fetchMicrosoftEvents(
 
 /** Registers a Microsoft Graph change subscription (webhook) for a calendar, if configured. */
 export async function subscribeMicrosoftCalendar(accessToken: string, calendarId: string) {
-  const webhookUrl = process.env.APP_URL ? `${process.env.APP_URL}/api/webhooks/microsoft` : null;
+  const webhookUrl = process.env.APP_URL?.trim() ? `${process.env.APP_URL.trim()}/api/webhooks/microsoft` : null;
   if (!webhookUrl) return null;
 
   const res = await fetch(`${GRAPH_BASE}/subscriptions`, {

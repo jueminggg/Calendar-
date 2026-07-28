@@ -34,7 +34,7 @@ export async function syncAllConnections() {
 
 /** Renews Google/Microsoft push-notification channels that are missing or about to expire. */
 export async function renewWebhooks() {
-  if (!process.env.APP_URL) return;
+  if (!process.env.APP_URL?.trim()) return;
 
   const soon = new Date(Date.now() + 24 * 60 * 60 * 1000);
 

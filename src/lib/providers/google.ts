@@ -18,7 +18,7 @@ export const GOOGLE_SCOPES = [
 ];
 
 function requireEnv(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} environment variable is not set`);
   return value;
 }
@@ -199,7 +199,7 @@ export async function fetchGoogleEvents(
 
 /** Registers a push-notification channel (Google "watch") for a calendar, if configured. */
 export async function watchGoogleCalendar(client: OAuth2Client, calendarId: string, channelId: string) {
-  const webhookUrl = process.env.APP_URL ? `${process.env.APP_URL}/api/webhooks/google` : null;
+  const webhookUrl = process.env.APP_URL?.trim() ? `${process.env.APP_URL.trim()}/api/webhooks/google` : null;
   if (!webhookUrl) return null;
 
   const calendar = google.calendar({ version: "v3", auth: client });
