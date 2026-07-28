@@ -21,12 +21,15 @@ export default function MonthGrid({
   events,
   onDayClick,
   onEventClick,
+  selectedIds,
 }: {
   year: number;
   month: number;
   events: CalendarEvent[];
   onDayClick: (date: Date) => void;
   onEventClick: (event: CalendarEvent) => void;
+  /** When set (select mode is active), events in this set render checked and others dim. */
+  selectedIds?: Set<string>;
 }) {
   const gridStart = startOfMonthGrid(year, month);
   const days: Date[] = Array.from({ length: 42 }, (_, i) => {
@@ -76,21 +79,27 @@ export default function MonthGrid({
               {day.getDate()}
             </span>
             <div className="mt-1 space-y-0.5">
-              {visible.map((event) => (
-                <button
-                  key={event.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEventClick(event);
-                  }}
-                  className="w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white"
-                  style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source] }}
-                  title={event.title}
-                >
-                  {event.allDay ? "" : `${new Date(event.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} `}
-                  {event.title}
-                </button>
-              ))}
+              {visible.map((event) => {
+                const selected = selectedIds?.has(event.id);
+                return (
+                  <button
+                    key={event.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEventClick(event);
+                    }}
+                    className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
+                      selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                    }`}
+                    style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source] }}
+                    title={event.title}
+                  >
+                    {selected ? "✓ " : ""}
+                    {event.allDay ? "" : `${new Date(event.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} `}
+                    {event.title}
+                  </button>
+                );
+              })}
               {overflow > 0 && <div className="text-[11px] text-gray-500 px-1">+{overflow} more</div>}
             </div>
           </div>

@@ -40,6 +40,9 @@ export default function CalendarPage() {
     null,
   );
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const { rangeFrom, rangeTo, weekDays } = useMemo(() => {
     if (view === "month") {
@@ -74,6 +77,38 @@ export default function CalendarPage() {
 
   function goToday() {
     setCursor(startOfDay(new Date()));
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelectedIds(new Set());
+  }
+
+  function handleEventClick(event: CalendarEvent) {
+    if (!selectMode) {
+      setModal({ mode: "edit", event });
+      return;
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(event.id)) next.delete(event.id);
+      else next.add(event.id);
+      return next;
+    });
+  }
+
+  async function deleteSelected() {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} event(s)? This can't be undone.`)) return;
+    setDeleting(true);
+    try {
+      await Promise.allSettled(Array.from(selectedIds).map((id) => fetch(`/api/events/${id}`, { method: "DELETE" })));
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      await load();
+    } finally {
+      setDeleting(false);
+    }
   }
   function goPrev() {
     if (view === "month") setCursor((c) => addMonths(new Date(c.getFullYear(), c.getMonth(), 1), -1));
@@ -142,20 +177,50 @@ export default function CalendarPage() {
               </button>
             ))}
           </div>
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            Import screenshot
-          </button>
-          <button
-            onClick={() => setModal({ mode: "create", date: new Date() })}
-            className="rounded-md bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-sm font-medium"
-          >
-            + New event
-          </button>
+          {selectMode ? (
+            <>
+              <button
+                onClick={deleteSelected}
+                disabled={selectedIds.size === 0 || deleting}
+                className="rounded-md bg-red-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : `Delete (${selectedIds.size})`}
+              </button>
+              <button
+                onClick={toggleSelectMode}
+                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={toggleSelectMode}
+                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                Select
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                Import screenshot
+              </button>
+              <button
+                onClick={() => setModal({ mode: "create", date: new Date() })}
+                className="rounded-md bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-sm font-medium"
+              >
+                + New event
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {selectMode && (
+        <p className="text-xs text-gray-500 mb-3">Tap events to select them, then Delete. Tap Cancel to stop.</p>
+      )}
 
       {loading && events.length === 0 ? (
         <p className="text-sm text-gray-500">Loading…</p>
@@ -164,15 +229,17 @@ export default function CalendarPage() {
           year={cursor.getFullYear()}
           month={cursor.getMonth()}
           events={events}
-          onDayClick={(date) => setModal({ mode: "create", date })}
-          onEventClick={(event) => setModal({ mode: "edit", event })}
+          onDayClick={(date) => !selectMode && setModal({ mode: "create", date })}
+          onEventClick={handleEventClick}
+          selectedIds={selectMode ? selectedIds : undefined}
         />
       ) : (
         <TimeGridView
           days={weekDays ?? [cursor]}
           events={events}
-          onSlotClick={(date) => setModal({ mode: "create", date })}
-          onEventClick={(event) => setModal({ mode: "edit", event })}
+          onSlotClick={(date) => !selectMode && setModal({ mode: "create", date })}
+          onEventClick={handleEventClick}
+          selectedIds={selectMode ? selectedIds : undefined}
         />
       )}
 

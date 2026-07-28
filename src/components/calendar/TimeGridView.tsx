@@ -56,11 +56,14 @@ export default function TimeGridView({
   events,
   onSlotClick,
   onEventClick,
+  selectedIds,
 }: {
   days: Date[];
   events: CalendarEvent[];
   onSlotClick: (date: Date) => void;
   onEventClick: (event: CalendarEvent) => void;
+  /** When set (select mode is active), events in this set render checked and others dim. */
+  selectedIds?: Set<string>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const today = new Date();
@@ -115,17 +118,23 @@ export default function TimeGridView({
           >
             {eventsByDay[i]
               .filter((e) => e.allDay)
-              .map((e) => (
-                <button
-                  key={e.id}
-                  onClick={() => onEventClick(e)}
-                  className="w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white"
-                  style={{ backgroundColor: e.calendarColor ?? SOURCE_COLORS[e.source] }}
-                  title={e.title}
-                >
-                  {e.title}
-                </button>
-              ))}
+              .map((e) => {
+                const selected = selectedIds?.has(e.id);
+                return (
+                  <button
+                    key={e.id}
+                    onClick={() => onEventClick(e)}
+                    className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
+                      selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                    }`}
+                    style={{ backgroundColor: e.calendarColor ?? SOURCE_COLORS[e.source] }}
+                    title={e.title}
+                  >
+                    {selected ? "✓ " : ""}
+                    {e.title}
+                  </button>
+                );
+              })}
           </div>
         ))}
       </div>
@@ -163,26 +172,32 @@ export default function TimeGridView({
                     }}
                   />
                 ))}
-                {placed.map((p) => (
-                  <button
-                    key={p.event.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEventClick(p.event);
-                    }}
-                    className="absolute rounded px-1 py-0.5 text-[11px] leading-tight text-white overflow-hidden text-left"
-                    style={{
-                      top: p.top,
-                      height: Math.max(p.height, 18),
-                      left: `${(p.col / p.totalCols) * 100}%`,
-                      width: `${100 / p.totalCols}%`,
-                      backgroundColor: p.event.calendarColor ?? SOURCE_COLORS[p.event.source],
-                    }}
-                    title={p.event.title}
-                  >
-                    {p.event.title}
-                  </button>
-                ))}
+                {placed.map((p) => {
+                  const selected = selectedIds?.has(p.event.id);
+                  return (
+                    <button
+                      key={p.event.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEventClick(p.event);
+                      }}
+                      className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight text-white overflow-hidden text-left ${
+                        selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                      }`}
+                      style={{
+                        top: p.top,
+                        height: Math.max(p.height, 18),
+                        left: `${(p.col / p.totalCols) * 100}%`,
+                        width: `${100 / p.totalCols}%`,
+                        backgroundColor: p.event.calendarColor ?? SOURCE_COLORS[p.event.source],
+                      }}
+                      title={p.event.title}
+                    >
+                      {selected ? "✓ " : ""}
+                      {p.event.title}
+                    </button>
+                  );
+                })}
               </div>
             );
           })}
