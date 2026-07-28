@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { createEventOnProvider } from "@/lib/sync/write";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
       calendarName: e.calendarList?.name ?? "My Calendar",
       calendarColor: e.calendarList?.color ?? null,
       connectionLabel: e.calendarList?.connection.label ?? null,
-      editable: e.source === "NATIVE",
+      editable: true,
     })),
   });
 }
@@ -54,6 +55,9 @@ const createSchema = z.object({
   endAt: z.string(),
   allDay: z.boolean().optional(),
   timezone: z.string().optional(),
+  // Omit for a plain native event. Set to create the event on that connected
+  // calendar instead (Google/Outlook/iCloud), so it also shows up there.
+  calendarListId: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -67,18 +71,68 @@ export async function POST(request: NextRequest) {
   }
   const data = parsed.data;
 
+  const writeInput = {
+    title: data.title,
+    description: data.description ?? null,
+    location: data.location ?? null,
+    startAt: new Date(data.startAt),
+    endAt: new Date(data.endAt),
+    allDay: data.allDay ?? false,
+    timezone: data.timezone ?? "UTC",
+  };
+
+  if (!data.calendarListId) {
+    const event = await prisma.event.create({
+      data: {
+        userId: session.userId,
+        source: "NATIVE",
+        title: writeInput.title,
+        description: writeInput.description,
+        location: writeInput.location,
+        startAt: writeInput.startAt,
+        endAt: writeInput.endAt,
+        allDay: writeInput.allDay,
+        timezone: writeInput.timezone,
+        status: "CONFIRMED",
+      },
+    });
+    return NextResponse.json({ event });
+  }
+
+  const calendar = await prisma.calendarList.findUnique({
+    where: { id: data.calendarListId },
+    include: { connection: true },
+  });
+  if (!calendar || calendar.connection.userId !== session.userId) {
+    return NextResponse.json({ error: "Calendar not found" }, { status: 404 });
+  }
+
+  let result;
+  try {
+    result = await createEventOnProvider(calendar, writeInput);
+  } catch (err) {
+    console.error("Failed to create event on provider", err);
+    const message = err instanceof Error ? err.message : "Couldn't create the event on that calendar.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+
   const event = await prisma.event.create({
     data: {
       userId: session.userId,
-      source: "NATIVE",
-      title: data.title,
-      description: data.description,
-      location: data.location,
-      startAt: new Date(data.startAt),
-      endAt: new Date(data.endAt),
-      allDay: data.allDay ?? false,
-      timezone: data.timezone ?? "UTC",
+      calendarListId: calendar.id,
+      source: calendar.connection.provider,
+      externalId: result.externalId,
+      icalUid: result.icalUid,
+      title: writeInput.title,
+      description: writeInput.description,
+      location: writeInput.location,
+      startAt: writeInput.startAt,
+      endAt: writeInput.endAt,
+      allDay: writeInput.allDay,
+      timezone: writeInput.timezone,
       status: "CONFIRMED",
+      providerUpdatedAt: result.providerUpdatedAt,
+      providerEtag: result.providerEtag,
     },
   });
 

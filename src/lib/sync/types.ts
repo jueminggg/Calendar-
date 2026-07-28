@@ -37,3 +37,22 @@ export type ProviderSyncResult = {
   /** true if the provider invalidated our cursor and this was a full resync */
   wasFullResync: boolean;
 };
+
+/** Fields needed to create/update an event on an external provider, from our own DB shape. */
+export type WriteEventInput = {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  startAt: Date;
+  endAt: Date;
+  allDay: boolean;
+  timezone?: string | null;
+};
+
+/** What a provider hands back after a successful create/update, to persist locally. */
+export type ProviderWriteResult = {
+  externalId: string;
+  icalUid?: string | null;
+  providerUpdatedAt?: Date | null;
+  providerEtag?: string | null;
+};

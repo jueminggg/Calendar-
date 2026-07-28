@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CalendarEvent } from "./types";
 import { SOURCE_COLORS, SOURCE_LABELS } from "@/lib/event-colors";
+
+type CalendarOption = { id: string; name: string; provider: "GOOGLE" | "MICROSOFT" | "APPLE" };
 
 function toLocalInputValue(iso: string): string {
   const d = new Date(iso);
@@ -23,8 +25,6 @@ export default function EventModal({
   onSaved: () => void;
   onDeleted?: () => void;
 }) {
-  const isReadOnly = Boolean(existing && !existing.editable);
-
   const defaultStart = existing ? new Date(existing.startAt) : (initialDate ?? new Date());
   const defaultEnd = existing
     ? new Date(existing.endAt)
@@ -38,6 +38,25 @@ export default function EventModal({
   const [end, setEnd] = useState(toLocalInputValue(defaultEnd.toISOString()));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [calendarOptions, setCalendarOptions] = useState<CalendarOption[]>([]);
+  const [calendarListId, setCalendarListId] = useState<string>("");
+
+  useEffect(() => {
+    if (existing) return; // calendar picker only applies to new events
+    fetch("/api/connections")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        const options: CalendarOption[] = data.connections.flatMap(
+          (c: { provider: CalendarOption["provider"]; status: string; calendars: { id: string; name: string; enabled: boolean }[] }) =>
+            c.status === "ACTIVE"
+              ? c.calendars.filter((cal) => cal.enabled).map((cal) => ({ id: cal.id, name: cal.name, provider: c.provider }))
+              : [],
+        );
+        setCalendarOptions(options);
+      })
+      .catch(() => {});
+  }, [existing]);
 
   async function handleSave() {
     setError(null);
@@ -54,6 +73,7 @@ export default function EventModal({
         startAt: new Date(start).toISOString(),
         endAt: new Date(end).toISOString(),
         allDay,
+        ...(existing ? {} : { calendarListId: calendarListId || undefined }),
       };
       const res = await fetch(existing ? `/api/events/${existing.id}` : "/api/events", {
         method: existing ? "PATCH" : "POST",
@@ -106,11 +126,28 @@ export default function EventModal({
           </div>
         )}
 
-        {isReadOnly && (
-          <p className="text-xs bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded px-2 py-1.5">
-            This event is synced from an external calendar. Edit it there — support for editing it here is coming
-            later.
+        {existing && existing.source !== "NATIVE" && (
+          <p className="text-xs bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded px-2 py-1.5">
+            Changes here are saved back to {SOURCE_LABELS[existing.source]} too.
           </p>
+        )}
+
+        {!existing && calendarOptions.length > 0 && (
+          <div>
+            <label className="text-sm font-medium">Calendar</label>
+            <select
+              value={calendarListId}
+              onChange={(e) => setCalendarListId(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+            >
+              <option value="">This app only (native)</option>
+              {calendarOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name} ({SOURCE_LABELS[opt.provider]})
+                </option>
+              ))}
+            </select>
+          </div>
         )}
 
         {error && (
@@ -126,17 +163,15 @@ export default function EventModal({
             </label>
             <input
               id="event-title"
-              disabled={isReadOnly}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
             />
           </div>
 
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              disabled={isReadOnly}
               checked={allDay}
               onChange={(e) => setAllDay(e.target.checked)}
             />
@@ -147,21 +182,19 @@ export default function EventModal({
             <div>
               <label className="text-sm font-medium">Starts</label>
               <input
-                disabled={isReadOnly}
                 type={allDay ? "date" : "datetime-local"}
                 value={allDay ? start.slice(0, 10) : start}
                 onChange={(e) => setStart(e.target.value)}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
               />
             </div>
             <div>
               <label className="text-sm font-medium">Ends</label>
               <input
-                disabled={isReadOnly}
                 type={allDay ? "date" : "datetime-local"}
                 value={allDay ? end.slice(0, 10) : end}
                 onChange={(e) => setEnd(e.target.value)}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
               />
             </div>
           </div>
@@ -169,21 +202,19 @@ export default function EventModal({
           <div>
             <label className="text-sm font-medium">Location</label>
             <input
-              disabled={isReadOnly}
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
             />
           </div>
 
           <div>
             <label className="text-sm font-medium">Description</label>
             <textarea
-              disabled={isReadOnly}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
             />
           </div>
 
@@ -202,7 +233,7 @@ export default function EventModal({
         </div>
 
         <div className="flex justify-between pt-2">
-          {existing && existing.editable ? (
+          {existing ? (
             <button
               onClick={handleDelete}
               disabled={saving}
@@ -213,15 +244,13 @@ export default function EventModal({
           ) : (
             <span />
           )}
-          {!isReadOnly && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-md bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 text-sm font-medium disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-          )}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-md bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
       </div>
     </div>

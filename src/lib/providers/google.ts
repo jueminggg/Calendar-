@@ -3,7 +3,7 @@ import type { calendar_v3 } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 import type { CalendarConnection } from "@prisma/client";
-import type { NormalizedEvent, ProviderSyncResult } from "@/lib/sync/types";
+import type { NormalizedEvent, ProviderSyncResult, ProviderWriteResult, WriteEventInput } from "@/lib/sync/types";
 
 // Derived from the constructor we actually use, rather than imported from
 // google-auth-library directly, to avoid a duplicate-package type mismatch
@@ -195,6 +195,67 @@ export async function fetchGoogleEvents(
     nextCursor: nextSyncToken ?? syncCursor,
     wasFullResync,
   };
+}
+
+function toDateOnly(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function buildGoogleEventBody(input: WriteEventInput): calendar_v3.Schema$Event {
+  const timeZone = input.timezone ?? "UTC";
+  return {
+    summary: input.title,
+    description: input.description ?? undefined,
+    location: input.location ?? undefined,
+    start: input.allDay ? { date: toDateOnly(input.startAt) } : { dateTime: input.startAt.toISOString(), timeZone },
+    end: input.allDay ? { date: toDateOnly(input.endAt) } : { dateTime: input.endAt.toISOString(), timeZone },
+  };
+}
+
+function toWriteResult(data: calendar_v3.Schema$Event): ProviderWriteResult {
+  if (!data.id) throw new Error("Google did not return an event id");
+  return {
+    externalId: data.id,
+    icalUid: data.iCalUID ?? null,
+    providerUpdatedAt: data.updated ? new Date(data.updated) : null,
+    providerEtag: data.etag ?? null,
+  };
+}
+
+/** Creates a new event directly on Google Calendar. */
+export async function createGoogleEvent(
+  client: OAuth2Client,
+  calendarId: string,
+  input: WriteEventInput,
+): Promise<ProviderWriteResult> {
+  const calendar = google.calendar({ version: "v3", auth: client });
+  const { data } = await calendar.events.insert({ calendarId, requestBody: buildGoogleEventBody(input) });
+  return toWriteResult(data);
+}
+
+/** Updates an existing Google Calendar event in place. */
+export async function updateGoogleEvent(
+  client: OAuth2Client,
+  calendarId: string,
+  eventId: string,
+  input: WriteEventInput,
+): Promise<ProviderWriteResult> {
+  const calendar = google.calendar({ version: "v3", auth: client });
+  const { data } = await calendar.events.patch({ calendarId, eventId, requestBody: buildGoogleEventBody(input) });
+  return toWriteResult(data);
+}
+
+/** Deletes a Google Calendar event. Already-gone events (404/410) are treated as success. */
+export async function deleteGoogleEvent(client: OAuth2Client, calendarId: string, eventId: string): Promise<void> {
+  try {
+    const calendar = google.calendar({ version: "v3", auth: client });
+    await calendar.events.delete({ calendarId, eventId });
+  } catch (err: unknown) {
+    const status = (err as { code?: number; response?: { status?: number } })?.code ??
+      (err as { response?: { status?: number } })?.response?.status;
+    if (status === 404 || status === 410) return;
+    throw err;
+  }
 }
 
 /** Registers a push-notification channel (Google "watch") for a calendar, if configured. */

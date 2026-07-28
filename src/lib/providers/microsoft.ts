@@ -2,7 +2,7 @@ import { ConfidentialClientApplication, type AccountInfo } from "@azure/msal-nod
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 import type { CalendarConnection } from "@prisma/client";
-import type { NormalizedEvent, ProviderSyncResult } from "@/lib/sync/types";
+import type { NormalizedEvent, ProviderSyncResult, ProviderWriteResult, WriteEventInput } from "@/lib/sync/types";
 
 export const MICROSOFT_SCOPES = ["openid", "email", "profile", "offline_access", "Calendars.Read"];
 
@@ -222,6 +222,71 @@ export async function fetchMicrosoftEvents(
   }
 
   return { events, deletedExternalIds, nextCursor, wasFullResync };
+}
+
+function buildGraphEventBody(input: WriteEventInput) {
+  return {
+    subject: input.title,
+    body: input.description ? { contentType: "text", content: input.description } : undefined,
+    location: input.location ? { displayName: input.location } : undefined,
+    isAllDay: input.allDay,
+    start: { dateTime: input.startAt.toISOString(), timeZone: "UTC" },
+    end: { dateTime: input.endAt.toISOString(), timeZone: "UTC" },
+  };
+}
+
+function toWriteResult(data: GraphEvent): ProviderWriteResult {
+  return {
+    externalId: data.id,
+    icalUid: data.iCalUId ?? null,
+    providerUpdatedAt: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    providerEtag: null,
+  };
+}
+
+async function graphWrite(accessToken: string, path: string, method: "POST" | "PATCH", body: unknown) {
+  const res = await fetch(`${GRAPH_BASE}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Graph API ${res.status}: ${errBody}`);
+  }
+  return res.json();
+}
+
+/** Creates a new event directly on an Outlook calendar. */
+export async function createMicrosoftEvent(
+  accessToken: string,
+  calendarId: string,
+  input: WriteEventInput,
+): Promise<ProviderWriteResult> {
+  const data = await graphWrite(accessToken, `/me/calendars/${calendarId}/events`, "POST", buildGraphEventBody(input));
+  return toWriteResult(data);
+}
+
+/** Updates an existing Outlook event in place. */
+export async function updateMicrosoftEvent(
+  accessToken: string,
+  eventId: string,
+  input: WriteEventInput,
+): Promise<ProviderWriteResult> {
+  const data = await graphWrite(accessToken, `/me/events/${eventId}`, "PATCH", buildGraphEventBody(input));
+  return toWriteResult(data);
+}
+
+/** Deletes an Outlook event. Already-gone events (404) are treated as success. */
+export async function deleteMicrosoftEvent(accessToken: string, eventId: string): Promise<void> {
+  const res = await fetch(`${GRAPH_BASE}/me/events/${eventId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Graph API ${res.status}: ${body}`);
+  }
 }
 
 /** Registers a Microsoft Graph change subscription (webhook) for a calendar, if configured. */

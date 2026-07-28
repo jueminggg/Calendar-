@@ -1,8 +1,9 @@
 import { DAVClient } from "tsdav";
 import ICAL from "ical.js";
+import { randomUUID } from "crypto";
 import { decrypt } from "@/lib/crypto";
 import type { CalendarConnection } from "@prisma/client";
-import type { NormalizedEvent } from "@/lib/sync/types";
+import type { NormalizedEvent, ProviderWriteResult, WriteEventInput } from "@/lib/sync/types";
 
 const DEFAULT_SERVER_URL = "https://caldav.icloud.com";
 
@@ -98,5 +99,84 @@ export function parseIcsEvent(icsData: string, objectUrl: string): NormalizedEve
   } catch (err) {
     console.error(`Failed to parse CalDAV event at ${objectUrl}`, err);
     return null;
+  }
+}
+
+function buildIcs(input: WriteEventInput, uid: string): string {
+  const calendar = new ICAL.Component(["vcalendar", [], []]);
+  calendar.updatePropertyWithValue("prodid", "-//CalSync//EN");
+  calendar.updatePropertyWithValue("version", "2.0");
+
+  const vevent = new ICAL.Component("vevent");
+  vevent.updatePropertyWithValue("uid", uid);
+  vevent.updatePropertyWithValue("summary", input.title);
+  if (input.description) vevent.updatePropertyWithValue("description", input.description);
+  if (input.location) vevent.updatePropertyWithValue("location", input.location);
+
+  const dtstamp = ICAL.Time.now();
+  vevent.updatePropertyWithValue("dtstamp", dtstamp);
+
+  const dtstart = ICAL.Time.fromJSDate(input.startAt, true);
+  const dtend = ICAL.Time.fromJSDate(input.endAt, true);
+  if (input.allDay) {
+    dtstart.isDate = true;
+    dtend.isDate = true;
+  }
+  vevent.updatePropertyWithValue("dtstart", dtstart);
+  vevent.updatePropertyWithValue("dtend", dtend);
+
+  calendar.addSubcomponent(vevent);
+  return calendar.toString();
+}
+
+/** Creates a new event on an iCloud (CalDAV) calendar. */
+export async function createAppleEvent(
+  client: DAVClient,
+  calendarUrl: string,
+  input: WriteEventInput,
+): Promise<ProviderWriteResult> {
+  const uid = randomUUID();
+  const filename = `${uid}.ics`;
+  const response = await client.createCalendarObject({
+    calendar: { url: calendarUrl },
+    iCalString: buildIcs(input, uid),
+    filename,
+  });
+  if (!response.ok) throw new Error(`CalDAV create failed: ${response.status} ${await response.text().catch(() => "")}`);
+
+  return {
+    externalId: new URL(filename, calendarUrl).toString(),
+    icalUid: uid,
+    providerUpdatedAt: new Date(),
+    providerEtag: response.headers.get("etag"),
+  };
+}
+
+/** Overwrites an existing iCloud (CalDAV) event in place, keeping the same UID. */
+export async function updateAppleEvent(
+  client: DAVClient,
+  objectUrl: string,
+  icalUid: string,
+  input: WriteEventInput,
+  etag?: string | null,
+): Promise<ProviderWriteResult> {
+  const response = await client.updateCalendarObject({
+    calendarObject: { url: objectUrl, data: buildIcs(input, icalUid), etag: etag ?? undefined },
+  });
+  if (!response.ok) throw new Error(`CalDAV update failed: ${response.status} ${await response.text().catch(() => "")}`);
+
+  return {
+    externalId: objectUrl,
+    icalUid,
+    providerUpdatedAt: new Date(),
+    providerEtag: response.headers.get("etag"),
+  };
+}
+
+/** Deletes an iCloud (CalDAV) event. Already-gone events (404) are treated as success. */
+export async function deleteAppleEvent(client: DAVClient, objectUrl: string, etag?: string | null): Promise<void> {
+  const response = await client.deleteCalendarObject({ calendarObject: { url: objectUrl, etag: etag ?? undefined } });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`CalDAV delete failed: ${response.status} ${await response.text().catch(() => "")}`);
   }
 }
