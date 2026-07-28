@@ -14,4 +14,6 @@ export type CalendarEvent = {
   calendarColor: string | null;
   connectionLabel: string | null;
   editable: boolean;
+  recurrenceRule: string | null;
+  recurringEventId: string | null;
 };

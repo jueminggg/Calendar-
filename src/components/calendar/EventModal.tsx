@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import type { CalendarEvent } from "./types";
 import { SOURCE_COLORS, SOURCE_LABELS } from "@/lib/event-colors";
+import { describeRecurrence } from "@/lib/recurrence";
 
 type CalendarOption = { id: string; name: string; provider: "GOOGLE" | "MICROSOFT" | "APPLE" };
+type RepeatFreq = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
+
+function defaultUntil(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 3);
+  return d.toISOString().slice(0, 10);
+}
 
 function toLocalInputValue(iso: string): string {
   const d = new Date(iso);
@@ -40,6 +48,10 @@ export default function EventModal({
   const [saving, setSaving] = useState(false);
   const [calendarOptions, setCalendarOptions] = useState<CalendarOption[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set(["native"]));
+  const [repeatFreq, setRepeatFreq] = useState<RepeatFreq>("NONE");
+  const [repeatEndType, setRepeatEndType] = useState<"count" | "until">("count");
+  const [repeatCount, setRepeatCount] = useState(10);
+  const [repeatUntil, setRepeatUntil] = useState(defaultUntil);
 
   function toggleTarget(id: string) {
     setSelectedTargets((prev) => {
@@ -48,6 +60,13 @@ export default function EventModal({
       else next.add(id);
       return next;
     });
+  }
+
+  function handleRepeatFreqChange(freq: RepeatFreq) {
+    setRepeatFreq(freq);
+    // Write-back for recurring series isn't built for external providers yet,
+    // so recurring events can only be created natively.
+    if (freq !== "NONE") setSelectedTargets(new Set(["native"]));
   }
 
   useEffect(() => {
@@ -86,7 +105,21 @@ export default function EventModal({
         startAt: new Date(start).toISOString(),
         endAt: new Date(end).toISOString(),
         allDay,
-        ...(existing ? {} : { targets: Array.from(selectedTargets) }),
+        ...(existing
+          ? {}
+          : {
+              targets: Array.from(selectedTargets),
+              ...(repeatFreq !== "NONE"
+                ? {
+                    recurrence: {
+                      freq: repeatFreq,
+                      ...(repeatEndType === "count"
+                        ? { count: repeatCount }
+                        : { until: new Date(repeatUntil).toISOString() }),
+                    },
+                  }
+                : {}),
+            }),
       };
       const res = await fetch(existing ? `/api/events/${existing.id}` : "/api/events", {
         method: existing ? "PATCH" : "POST",
@@ -107,11 +140,13 @@ export default function EventModal({
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(scope?: "series") {
     if (!existing) return;
+    if (scope === "series" && !window.confirm("Delete every event in this series? This can't be undone.")) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/events/${existing.id}`, { method: "DELETE" });
+      const url = `/api/events/${existing.id}${scope === "series" ? "?scope=series" : ""}`;
+      const res = await fetch(url, { method: "DELETE" });
       if (res.ok) onDeleted?.();
     } finally {
       setSaving(false);
@@ -148,6 +183,10 @@ export default function EventModal({
           </p>
         )}
 
+        {existing && describeRecurrence(existing.recurrenceRule) && (
+          <p className="text-xs text-gray-500">{describeRecurrence(existing.recurrenceRule)}</p>
+        )}
+
         {!existing && (
           <div>
             <label className="text-sm font-medium">Add to</label>
@@ -161,9 +200,13 @@ export default function EventModal({
                 This app only (native)
               </label>
               {calendarOptions.map((opt) => (
-                <label key={opt.id} className="flex items-center gap-2 text-sm">
+                <label
+                  key={opt.id}
+                  className={`flex items-center gap-2 text-sm ${repeatFreq !== "NONE" ? "opacity-40" : ""}`}
+                >
                   <input
                     type="checkbox"
+                    disabled={repeatFreq !== "NONE"}
                     checked={selectedTargets.has(opt.id)}
                     onChange={() => toggleTarget(opt.id)}
                   />
@@ -171,7 +214,11 @@ export default function EventModal({
                 </label>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-1">Select more than one to add this event to several calendars at once.</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {repeatFreq !== "NONE"
+                ? "Recurring events can only be added natively for now."
+                : "Select more than one to add this event to several calendars at once."}
+            </p>
           </div>
         )}
 
@@ -224,6 +271,57 @@ export default function EventModal({
             </div>
           </div>
 
+          {!existing && (
+            <div>
+              <label className="text-sm font-medium">Repeats</label>
+              <select
+                value={repeatFreq}
+                onChange={(e) => handleRepeatFreqChange(e.target.value as RepeatFreq)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+              >
+                <option value="NONE">Does not repeat</option>
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="YEARLY">Yearly</option>
+              </select>
+
+              {repeatFreq !== "NONE" && (
+                <div className="flex items-center gap-2 mt-2 text-sm">
+                  <span className="text-gray-500">Ends</span>
+                  <select
+                    value={repeatEndType}
+                    onChange={(e) => setRepeatEndType(e.target.value as "count" | "until")}
+                    className="rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-2 py-1.5 text-sm"
+                  >
+                    <option value="count">after</option>
+                    <option value="until">on date</option>
+                  </select>
+                  {repeatEndType === "count" ? (
+                    <>
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={repeatCount}
+                        onChange={(e) => setRepeatCount(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+                        className="w-16 rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-2 py-1.5 text-sm"
+                      />
+                      <span className="text-gray-500">times</span>
+                    </>
+                  ) : (
+                    <input
+                      type="date"
+                      value={repeatUntil}
+                      onChange={(e) => setRepeatUntil(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-2 py-1.5 text-sm"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="text-sm font-medium">Location</label>
             <input
@@ -259,13 +357,24 @@ export default function EventModal({
 
         <div className="flex justify-between pt-2">
           {existing ? (
-            <button
-              onClick={handleDelete}
-              disabled={saving}
-              className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
-            >
-              Delete
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleDelete()}
+                disabled={saving}
+                className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+              >
+                Delete
+              </button>
+              {existing.source === "NATIVE" && existing.recurringEventId && (
+                <button
+                  onClick={() => handleDelete("series")}
+                  disabled={saving}
+                  className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                >
+                  Delete all in series
+                </button>
+              )}
+            </div>
           ) : (
             <span />
           )}

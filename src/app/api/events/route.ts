@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { createEventOnProvider } from "@/lib/sync/write";
+import { expandOccurrences, buildRecurrenceRule, MAX_OCCURRENCES } from "@/lib/recurrence";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -43,11 +45,21 @@ export async function GET(request: NextRequest) {
       calendarColor: e.calendarList?.color ?? null,
       connectionLabel: e.calendarList?.connection.label ?? null,
       editable: true,
+      recurrenceRule: e.recurrenceRule,
+      recurringEventId: e.recurringEventId,
     })),
   });
 }
 
 const NATIVE_TARGET = "native";
+
+const recurrenceSchema = z
+  .object({
+    freq: z.enum(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]),
+    count: z.number().int().min(1).max(MAX_OCCURRENCES).optional(),
+    until: z.string().optional(),
+  })
+  .refine((r) => r.count || r.until, { message: "Recurrence needs either a count or an end date" });
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -62,6 +74,9 @@ const createSchema = z.object({
   // (Google/Outlook/iCloud). Can include several — the same event gets
   // created on each one. Defaults to native-only when omitted.
   targets: z.array(z.string()).min(1).optional(),
+  // When set, materializes one Event row per occurrence (native only — see
+  // src/lib/recurrence.ts for why this isn't stored as a single RRULE row).
+  recurrence: recurrenceSchema.optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -85,6 +100,42 @@ export async function POST(request: NextRequest) {
     allDay: data.allDay ?? false,
     timezone: data.timezone ?? "UTC",
   };
+
+  if (data.recurrence) {
+    if (targets.some((t) => t !== NATIVE_TARGET)) {
+      return NextResponse.json(
+        { error: "Recurring events can only be created natively for now — uncheck the other calendars." },
+        { status: 400 },
+      );
+    }
+
+    const seriesId = randomUUID();
+    const recurrenceRule = buildRecurrenceRule(data.recurrence);
+    const occurrences = expandOccurrences(writeInput.startAt, writeInput.endAt, data.recurrence);
+
+    const events = await prisma.$transaction(
+      occurrences.map((occ) =>
+        prisma.event.create({
+          data: {
+            userId: session.userId,
+            source: "NATIVE",
+            title: writeInput.title,
+            description: writeInput.description,
+            location: writeInput.location,
+            startAt: occ.startAt,
+            endAt: occ.endAt,
+            allDay: writeInput.allDay,
+            timezone: writeInput.timezone,
+            status: "CONFIRMED",
+            recurrenceRule,
+            recurringEventId: seriesId,
+          },
+        }),
+      ),
+    );
+
+    return NextResponse.json({ events });
+  }
 
   const calendarIds = targets.filter((t) => t !== NATIVE_TARGET);
   const calendars = calendarIds.length

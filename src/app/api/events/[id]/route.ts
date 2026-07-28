@@ -91,7 +91,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/events
   return NextResponse.json({ event: updated });
 }
 
-export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/events/[id]">) {
+export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/events/[id]">) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -99,6 +99,17 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/even
   const event = await prisma.event.findUnique({ where: { id }, include: { calendarList: { include: { connection: true } } } });
   if (!event || event.userId !== session.userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const scope = request.nextUrl.searchParams.get("scope");
+
+  // Whole-series delete is only offered for native recurring events: they're
+  // the only ones materialized purely in our own DB, so deleting every row
+  // sharing the series id actually sticks (an external series would just come
+  // back on the next sync/webhook since we never touched it upstream).
+  if (scope === "series" && event.source === "NATIVE" && event.recurringEventId) {
+    await prisma.event.deleteMany({ where: { userId: session.userId, recurringEventId: event.recurringEventId } });
+    return NextResponse.json({ ok: true });
   }
 
   if (event.source !== "NATIVE") {
