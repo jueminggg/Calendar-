@@ -34,10 +34,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("Screenshot parse failed", err);
-    return NextResponse.json(
-      { error: "Couldn't read events from that image. Try a clearer screenshot or enter it manually." },
-      { status: 502 },
-    );
+    const message = err instanceof Error ? err.message : "Couldn't read events from that image.";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 
   if (events.length === 0) {

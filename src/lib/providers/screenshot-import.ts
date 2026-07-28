@@ -65,7 +65,35 @@ export async function parseEventsFromImage(
 
   const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
 
-  const message = await client.messages.create({
+  let message;
+  try {
+    message = await requestExtraction(client, imageBase64, mediaType, opts);
+  } catch (err) {
+    if (err instanceof Anthropic.APIError) {
+      // Surface the real reason (bad/missing key, no credits, rate limit, etc.)
+      // instead of a generic failure — this is what actually shows up for
+      // most "won't read my screenshot" reports, not image quality.
+      throw new Error(`Anthropic API error (${err.status ?? "unknown"}): ${err.message}`);
+    }
+    throw err;
+  }
+
+  const toolUse = message.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+  );
+  if (!toolUse) return [];
+
+  const events = (toolUse.input as { events?: ParsedEvent[] }).events ?? [];
+  return events.filter((e) => e.title && e.startAt && e.endAt);
+}
+
+async function requestExtraction(
+  client: Anthropic,
+  imageBase64: string,
+  mediaType: SupportedMediaType,
+  opts: { timezone: string; referenceDate: Date },
+) {
+  return client.messages.create({
     model: "claude-opus-5",
     max_tokens: 4096,
     tools: [EXTRACT_EVENTS_TOOL],
@@ -90,12 +118,4 @@ If an event's exact end time isn't shown, estimate one hour after the start. If 
       },
     ],
   });
-
-  const toolUse = message.content.find(
-    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
-  );
-  if (!toolUse) return [];
-
-  const events = (toolUse.input as { events?: ParsedEvent[] }).events ?? [];
-  return events.filter((e) => e.title && e.startAt && e.endAt);
 }
