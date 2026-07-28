@@ -135,6 +135,8 @@ export async function createAppleEvent(
   calendarUrl: string,
   input: WriteEventInput,
 ): Promise<ProviderWriteResult> {
+  await client.login();
+
   const uid = randomUUID();
   const filename = `${uid}.ics`;
   const response = await client.createCalendarObject({
@@ -160,6 +162,8 @@ export async function updateAppleEvent(
   input: WriteEventInput,
   etag?: string | null,
 ): Promise<ProviderWriteResult> {
+  await client.login();
+
   const response = await client.updateCalendarObject({
     calendarObject: { url: objectUrl, data: buildIcs(input, icalUid), etag: etag ?? undefined },
   });
@@ -175,6 +179,8 @@ export async function updateAppleEvent(
 
 /** Deletes an iCloud (CalDAV) event. Already-gone events (404) are treated as success. */
 export async function deleteAppleEvent(client: DAVClient, objectUrl: string, etag?: string | null): Promise<void> {
+  await client.login();
+
   const response = await client.deleteCalendarObject({ calendarObject: { url: objectUrl, etag: etag ?? undefined } });
   if (!response.ok && response.status !== 404) {
     throw new Error(`CalDAV delete failed: ${response.status} ${await response.text().catch(() => "")}`);
