@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
   });
 }
 
+const NATIVE_TARGET = "native";
+
 const createSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -55,9 +57,11 @@ const createSchema = z.object({
   endAt: z.string(),
   allDay: z.boolean().optional(),
   timezone: z.string().optional(),
-  // Omit for a plain native event. Set to create the event on that connected
-  // calendar instead (Google/Outlook/iCloud), so it also shows up there.
-  calendarListId: z.string().optional(),
+  // Which calendars to create this event on: "native" for a plain in-app-only
+  // copy, or a CalendarList id to also create it on that connected calendar
+  // (Google/Outlook/iCloud). Can include several — the same event gets
+  // created on each one. Defaults to native-only when omitted.
+  targets: z.array(z.string()).min(1).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -70,6 +74,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
   const data = parsed.data;
+  const targets = data.targets && data.targets.length > 0 ? data.targets : [NATIVE_TARGET];
 
   const writeInput = {
     title: data.title,
@@ -81,7 +86,20 @@ export async function POST(request: NextRequest) {
     timezone: data.timezone ?? "UTC",
   };
 
-  if (!data.calendarListId) {
+  const calendarIds = targets.filter((t) => t !== NATIVE_TARGET);
+  const calendars = calendarIds.length
+    ? await prisma.calendarList.findMany({ where: { id: { in: calendarIds } }, include: { connection: true } })
+    : [];
+
+  const missing = calendarIds.filter((id) => !calendars.some((c) => c.id === id));
+  if (missing.length > 0 || calendars.some((c) => c.connection.userId !== session.userId)) {
+    return NextResponse.json({ error: "One or more selected calendars weren't found." }, { status: 404 });
+  }
+
+  const createdEvents = [];
+  const errors: string[] = [];
+
+  if (targets.includes(NATIVE_TARGET)) {
     const event = await prisma.event.create({
       data: {
         userId: session.userId,
@@ -96,45 +114,42 @@ export async function POST(request: NextRequest) {
         status: "CONFIRMED",
       },
     });
-    return NextResponse.json({ event });
+    createdEvents.push(event);
   }
 
-  const calendar = await prisma.calendarList.findUnique({
-    where: { id: data.calendarListId },
-    include: { connection: true },
-  });
-  if (!calendar || calendar.connection.userId !== session.userId) {
-    return NextResponse.json({ error: "Calendar not found" }, { status: 404 });
+  for (const calendar of calendars) {
+    try {
+      const result = await createEventOnProvider(calendar, writeInput);
+      const event = await prisma.event.create({
+        data: {
+          userId: session.userId,
+          calendarListId: calendar.id,
+          source: calendar.connection.provider,
+          externalId: result.externalId,
+          icalUid: result.icalUid,
+          title: writeInput.title,
+          description: writeInput.description,
+          location: writeInput.location,
+          startAt: writeInput.startAt,
+          endAt: writeInput.endAt,
+          allDay: writeInput.allDay,
+          timezone: writeInput.timezone,
+          status: "CONFIRMED",
+          providerUpdatedAt: result.providerUpdatedAt,
+          providerEtag: result.providerEtag,
+        },
+      });
+      createdEvents.push(event);
+    } catch (err) {
+      console.error(`Failed to create event on calendar ${calendar.id}`, err);
+      const message = err instanceof Error ? err.message : "Couldn't create the event on that calendar.";
+      errors.push(`${calendar.name}: ${message}`);
+    }
   }
 
-  let result;
-  try {
-    result = await createEventOnProvider(calendar, writeInput);
-  } catch (err) {
-    console.error("Failed to create event on provider", err);
-    const message = err instanceof Error ? err.message : "Couldn't create the event on that calendar.";
-    return NextResponse.json({ error: message }, { status: 502 });
+  if (createdEvents.length === 0) {
+    return NextResponse.json({ error: errors.join("; ") || "Couldn't create the event." }, { status: 502 });
   }
 
-  const event = await prisma.event.create({
-    data: {
-      userId: session.userId,
-      calendarListId: calendar.id,
-      source: calendar.connection.provider,
-      externalId: result.externalId,
-      icalUid: result.icalUid,
-      title: writeInput.title,
-      description: writeInput.description,
-      location: writeInput.location,
-      startAt: writeInput.startAt,
-      endAt: writeInput.endAt,
-      allDay: writeInput.allDay,
-      timezone: writeInput.timezone,
-      status: "CONFIRMED",
-      providerUpdatedAt: result.providerUpdatedAt,
-      providerEtag: result.providerEtag,
-    },
-  });
-
-  return NextResponse.json({ event });
+  return NextResponse.json({ events: createdEvents, errors: errors.length ? errors : undefined });
 }

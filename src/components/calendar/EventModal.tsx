@@ -39,7 +39,16 @@ export default function EventModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [calendarOptions, setCalendarOptions] = useState<CalendarOption[]>([]);
-  const [calendarListId, setCalendarListId] = useState<string>("");
+  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set(["native"]));
+
+  function toggleTarget(id: string) {
+    setSelectedTargets((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (existing) return; // calendar picker only applies to new events
@@ -64,6 +73,10 @@ export default function EventModal({
       setError("Title is required");
       return;
     }
+    if (!existing && selectedTargets.size === 0) {
+      setError("Choose at least one calendar to add this to");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -73,7 +86,7 @@ export default function EventModal({
         startAt: new Date(start).toISOString(),
         endAt: new Date(end).toISOString(),
         allDay,
-        ...(existing ? {} : { calendarListId: calendarListId || undefined }),
+        ...(existing ? {} : { targets: Array.from(selectedTargets) }),
       };
       const res = await fetch(existing ? `/api/events/${existing.id}` : "/api/events", {
         method: existing ? "PATCH" : "POST",
@@ -84,6 +97,9 @@ export default function EventModal({
       if (!res.ok) {
         setError(data.error ?? "Something went wrong");
         return;
+      }
+      if (data.errors?.length) {
+        window.alert(`Added, but some calendars failed:\n${data.errors.join("\n")}`);
       }
       onSaved();
     } finally {
@@ -132,21 +148,30 @@ export default function EventModal({
           </p>
         )}
 
-        {!existing && calendarOptions.length > 0 && (
+        {!existing && (
           <div>
-            <label className="text-sm font-medium">Calendar</label>
-            <select
-              value={calendarListId}
-              onChange={(e) => setCalendarListId(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
-            >
-              <option value="">This app only (native)</option>
+            <label className="text-sm font-medium">Add to</label>
+            <div className="mt-1 space-y-1 rounded-md border border-gray-300 dark:border-gray-700 p-2 max-h-32 overflow-y-auto">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedTargets.has("native")}
+                  onChange={() => toggleTarget("native")}
+                />
+                This app only (native)
+              </label>
               {calendarOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
+                <label key={opt.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedTargets.has(opt.id)}
+                    onChange={() => toggleTarget(opt.id)}
+                  />
                   {opt.name} ({SOURCE_LABELS[opt.provider]})
-                </option>
+                </label>
               ))}
-            </select>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Select more than one to add this event to several calendars at once.</p>
           </div>
         )}
 
