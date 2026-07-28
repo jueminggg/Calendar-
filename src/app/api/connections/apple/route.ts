@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -66,14 +66,8 @@ export async function POST(request: Request) {
     });
   }
 
-  try {
-    await syncAppleConnection(connection.id, /* isInitialSync */ true);
-  } catch (err) {
-    return NextResponse.json({
-      ok: true,
-      warning: `Connected, but the first sync failed: ${err instanceof Error ? err.message : String(err)}`,
-    });
-  }
+  // Don't make the request wait on the initial sync — respond now, sync in the background.
+  after(() => syncAppleConnection(connection.id, /* isInitialSync */ true).catch((err) => console.error("Initial Apple sync failed", err)));
 
   return NextResponse.json({ ok: true });
 }

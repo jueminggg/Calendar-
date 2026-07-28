@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createOAuthClient, fetchGoogleAccountEmail, listGoogleCalendars } from "@/lib/providers/google";
 import { GOOGLE_STATE_COOKIE } from "@/lib/providers/oauth-state";
 import { getSession } from "@/lib/session";
@@ -66,7 +66,10 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  await syncGoogleConnection(connection.id, /* isInitialSync */ true);
+  // Fetching + storing events can take longer than a serverless function is
+  // allowed to run, so don't make the user wait on it: redirect immediately
+  // and let the initial sync finish in the background.
+  after(() => syncGoogleConnection(connection.id, /* isInitialSync */ true));
 
   const res = NextResponse.redirect(new URL("/settings/connections?connected=google", request.url));
   res.cookies.delete(GOOGLE_STATE_COOKIE);

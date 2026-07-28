@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   exchangeMicrosoftCode,
   fetchMicrosoftAccountEmail,
@@ -64,7 +64,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  await syncMicrosoftConnection(connection.id, /* isInitialSync */ true);
+  // Don't make the user wait on the initial sync — redirect now, sync in the background.
+  after(() => syncMicrosoftConnection(connection.id, /* isInitialSync */ true));
 
   const res = NextResponse.redirect(new URL("/settings/connections?connected=microsoft", request.url));
   res.cookies.delete(MICROSOFT_STATE_COOKIE);
