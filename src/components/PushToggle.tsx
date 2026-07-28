@@ -3,8 +3,12 @@
 import { useEffect, useState } from "react";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  // Defensively strip whitespace: a stray space/newline pasted into the env
+  // var (same class of bug as the APP_URL whitespace issue) makes atob()
+  // throw "The string contains invalid characters" otherwise.
+  const cleaned = base64String.replace(/\s/g, "");
+  const padding = "=".repeat((4 - (cleaned.length % 4)) % 4);
+  const base64 = (cleaned + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = atob(base64);
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
