@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@azure/msal-node": "^5.4.2",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",

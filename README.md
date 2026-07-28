@@ -121,7 +121,28 @@ Apple ID password:
 No environment variables are needed for Apple — credentials are entered
 per-connection through the UI and stored encrypted in the database.
 
-## 5. Deploying to Vercel + Neon
+## 5. Import from a screenshot (for accounts you can't connect directly)
+
+Some organizations block OAuth app registration or calendar sharing for
+their Microsoft 365 / Outlook tenant, which makes a real connection
+impossible even though you can still view your own calendar in a browser.
+For that case, the calendar page has an **Import screenshot** button:
+
+1. Take a screenshot of your calendar (any provider — Outlook web, Google
+   Calendar, whatever you can see).
+2. Click **Import screenshot** and upload it, or paste it directly
+   (⌘V / Ctrl+V) into the dialog.
+3. Claude reads the events out of the image and shows them as editable
+   drafts — fix anything it misread, uncheck anything you don't want, then
+   add them. They're created as regular native events (so they sync to all
+   your devices), not linked to any live account.
+
+This requires an `ANTHROPIC_API_KEY` (get one at
+[console.anthropic.com](https://console.anthropic.com/settings/keys)). It's
+optional — everything else works without it, but the button will error
+until it's set.
+
+## 6. Deploying to Vercel + Neon
 
 1. Create a free Postgres database at [neon.tech](https://neon.tech) (or
    Supabase) and copy its connection string.
@@ -130,7 +151,8 @@ per-connection through the UI and stored encrypted in the database.
    variable from `.env.example` (`DATABASE_URL` from Neon, `APP_URL` set to
    your `https://your-app.vercel.app` domain, generated `SESSION_SECRET` /
    `ENCRYPTION_KEY` / `SIGNUP_SECRET` / `CRON_SECRET`, plus the Google/
-   Microsoft values from steps 2–3 once you have them).
+   Microsoft values from steps 2–3 once you have them, and `ANTHROPIC_API_KEY`
+   if you want the screenshot-import button to work).
 4. Deploy. The build command (`prisma migrate deploy && next build`) applies
    any pending database migrations automatically on every deploy — nothing
    to run by hand.
@@ -152,7 +174,7 @@ Vercel Pro, or point a free external scheduler — e.g.
 at `https://your-app.vercel.app/api/cron/sync` every 10–15 minutes with
 header `Authorization: Bearer YOUR_CRON_SECRET`.
 
-## 6. Installing it on your devices
+## 7. Installing it on your devices
 
 Once deployed, open the app's URL in your browser on each device:
 

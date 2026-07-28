@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import MonthGrid from "@/components/calendar/MonthGrid";
 import EventModal from "@/components/calendar/EventModal";
+import ImportScreenshotModal from "@/components/calendar/ImportScreenshotModal";
 import type { CalendarEvent } from "@/components/calendar/types";
 import { SOURCE_COLORS, SOURCE_LABELS } from "@/lib/event-colors";
 
@@ -16,6 +17,7 @@ export default function CalendarPage() {
   const [modal, setModal] = useState<{ mode: "create"; date: Date } | { mode: "edit"; event: CalendarEvent } | null>(
     null,
   );
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +80,12 @@ export default function CalendarPage() {
             ))}
           </div>
           <button
+            onClick={() => setShowImportModal(true)}
+            className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Import screenshot
+          </button>
+          <button
             onClick={() => setModal({ mode: "create", date: new Date() })}
             className="rounded-md bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-sm font-medium"
           >
@@ -107,6 +115,16 @@ export default function CalendarPage() {
           onClose={() => setModal(null)}
           onSaved={() => (setModal(null), load())}
           onDeleted={() => (setModal(null), load())}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportScreenshotModal
+          onClose={() => setShowImportModal(false)}
+          onImported={() => {
+            setShowImportModal(false);
+            load();
+          }}
         />
       )}
     </div>
