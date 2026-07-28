@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { EventSource } from "@prisma/client";
 import type { NormalizedEvent, ProviderSyncResult } from "./types";
+import { sendPushToUser } from "@/lib/push";
 
 type SyncEventsArgs = {
   userId: string;
@@ -63,15 +64,10 @@ export async function syncCalendarEvents({ userId, calendarListId, source, resul
       });
 
       if (!isInitialSync && incoming.status !== "CANCELLED") {
-        await prisma.notification.create({
-          data: {
-            userId,
-            eventId: created.id,
-            type: "INVITE",
-            title: `New event: ${incoming.title}`,
-            body: formatWhen(incoming),
-          },
-        });
+        const title = `New event: ${incoming.title}`;
+        const body = formatWhen(incoming);
+        await prisma.notification.create({ data: { userId, eventId: created.id, type: "INVITE", title, body } });
+        await sendPushToUser(userId, { title, body, url: "/" });
       }
       continue;
     }
@@ -101,15 +97,12 @@ export async function syncCalendarEvents({ userId, calendarListId, source, resul
 
     if (!isInitialSync && changed) {
       const becameCancelled = incoming.status === "CANCELLED" && existing.status !== "CANCELLED";
+      const title = becameCancelled ? `Cancelled: ${incoming.title}` : `Updated: ${incoming.title}`;
+      const body = formatWhen(incoming);
       await prisma.notification.create({
-        data: {
-          userId,
-          eventId: existing.id,
-          type: becameCancelled ? "CANCELLATION" : "UPDATE",
-          title: becameCancelled ? `Cancelled: ${incoming.title}` : `Updated: ${incoming.title}`,
-          body: formatWhen(incoming),
-        },
+        data: { userId, eventId: existing.id, type: becameCancelled ? "CANCELLATION" : "UPDATE", title, body },
       });
+      await sendPushToUser(userId, { title, body, url: "/" });
     }
   }
 
@@ -122,14 +115,9 @@ export async function syncCalendarEvents({ userId, calendarListId, source, resul
     await prisma.event.update({ where: { id: existing.id }, data: { status: "CANCELLED" } });
 
     if (!isInitialSync) {
-      await prisma.notification.create({
-        data: {
-          userId,
-          eventId: existing.id,
-          type: "CANCELLATION",
-          title: `Cancelled: ${existing.title}`,
-        },
-      });
+      const title = `Cancelled: ${existing.title}`;
+      await prisma.notification.create({ data: { userId, eventId: existing.id, type: "CANCELLATION", title } });
+      await sendPushToUser(userId, { title, url: "/" });
     }
   }
 

@@ -40,6 +40,9 @@ export default function Nav({ email }: { email: string }) {
           <Link href="/" className={linkClass("/")}>
             Calendar
           </Link>
+          <Link href="/todo" className={linkClass("/todo")}>
+            To-do
+          </Link>
           <Link href="/settings/connections" className={linkClass("/settings/connections")}>
             Connections
           </Link>
@@ -61,6 +64,13 @@ export default function Nav({ email }: { email: string }) {
               <div className="px-3 py-2 text-xs text-gray-500 truncate border-b border-gray-100 dark:border-gray-800">
                 {email}
               </div>
+              <Link
+                href="/settings/notifications"
+                onClick={() => setMenuOpen(false)}
+                className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Notifications
+              </Link>
               <button
                 onClick={signOut}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"

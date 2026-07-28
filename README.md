@@ -27,13 +27,11 @@ deployment, one login, one URL.
   up even if a webhook was missed, expired, or was never set up. Webhooks
   are a nice-to-have for speed, not a requirement.
 
-**Known limitation (v1):** editing or deleting an event that was synced
-*from* Google/Outlook/iCloud has to happen on the original calendar — this
-app doesn't write back to them yet. Events you create directly in this app
-("native" events, shown in green) are fully editable here. Recurring iCloud
-events also aren't expanded into individual instances the way Google/Outlook
-events are (a CalDAV/ical.js limitation) — you'll see the recurring series'
-first occurrence only.
+**Known limitations (v1):** recurring events created in this app (native)
+only write back here, not to Google/Outlook/iCloud — pick "This app only"
+when setting a repeat. Recurring iCloud events also aren't expanded into
+individual instances the way Google/Outlook events are (a CalDAV/ical.js
+limitation) — you'll see the recurring series' first occurrence only.
 
 ## 1. Local development
 
@@ -184,3 +182,34 @@ Once deployed, open the app's URL in your browser on each device:
 
 It'll open full-screen like a native app, using the icon and name from
 `public/manifest.webmanifest`.
+
+## 8. Push notifications and daily planning reminders
+
+The 🔔 bell in the nav always shows invite/edit/cancellation alerts in-app,
+but that only helps while the app is open. For real notifications on your
+phone's lock screen — including a daily reminder to plan your day each
+morning and check off your to-dos each evening — set up Web Push:
+
+1. Generate a key pair: `npx web-push generate-vapid-keys`.
+2. Add to Vercel: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` from that
+   output, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` set to the **same value** as
+   `VAPID_PUBLIC_KEY`, and `VAPID_SUBJECT` (a `mailto:you@example.com` or
+   `https://` URL — push services use this to contact you if something's
+   misbehaving). Redeploy afterward.
+3. On each device (install as a PWA first — see step 7 above; iOS requires
+   this, Android/desktop work in-browser too), go to your profile menu →
+   **Notifications** → **Enable push on this device**, and allow the
+   permission prompt.
+4. On that same page, turn on **daily planning reminders** and set your
+   morning/evening times — they're interpreted in your account's timezone.
+
+**Reminders need their own poller.** Like the Apple/iCloud sync gap
+mentioned above, Vercel Hobby's cron only runs once a day, which isn't
+useful for "remind me every morning at 7am *and* every evening at 8pm."
+Point an external scheduler at `/api/cron/reminders` every 15–30 minutes,
+the same way as `/api/cron/sync`:
+[cron-job.org](https://cron-job.org) or a GitHub Actions scheduled
+workflow, hitting `https://your-app.vercel.app/api/cron/reminders` with
+header `Authorization: Bearer YOUR_CRON_SECRET`. It's idempotent — each
+user gets at most one morning and one evening reminder per day no matter
+how often it's polled.

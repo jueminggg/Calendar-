@@ -57,9 +57,51 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  connections   CalendarConnection[]
-  events        Event[]
-  notifications Notification[]
+  // Daily planning reminders ("HH:MM", interpreted in the user's own timezone above)
+  remindersEnabled          Boolean   @default(false)
+  morningReminderTime       String    @default("07:00")
+  eveningReminderTime       String    @default("20:00")
+  lastMorningReminderSentAt DateTime?
+  lastEveningReminderSentAt DateTime?
+
+  connections       CalendarConnection[]
+  events            Event[]
+  notifications     Notification[]
+  tasks             Task[]
+  pushSubscriptions PushSubscription[]
+}
+
+/// One browser/device's Web Push subscription, so a user can have several
+/// (phone, laptop, iPad) and reminders/alerts go out to all of them.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique @db.Text
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// A single day's to-do item, optionally time-blocked (startAt/endAt) so it
+/// can double as a plan for the day rather than just a checklist.
+model Task {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  notes     String?
+  date      DateTime  // the day this to-do belongs to, stored as that day's midnight UTC
+  startAt   DateTime?
+  endAt     DateTime?
+  done      Boolean   @default(false)
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, date])
 }
 
 /// One connected external account (a Google account, a Microsoft account, or an
