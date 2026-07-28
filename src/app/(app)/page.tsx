@@ -1,17 +1,39 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import MonthGrid from "@/components/calendar/MonthGrid";
+import TimeGridView from "@/components/calendar/TimeGridView";
 import EventModal from "@/components/calendar/EventModal";
 import ImportScreenshotModal from "@/components/calendar/ImportScreenshotModal";
 import type { CalendarEvent } from "@/components/calendar/types";
 import { SOURCE_COLORS, SOURCE_LABELS } from "@/lib/event-colors";
 
+type ViewMode = "month" | "week" | "day";
+
+function startOfDay(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+function addMonths(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setMonth(r.getMonth() + n);
+  return r;
+}
+function startOfWeek(d: Date): Date {
+  const r = startOfDay(d);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+
 export default function CalendarPage() {
-  const [cursor, setCursor] = useState(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
-  });
+  const [view, setView] = useState<ViewMode>("month");
+  const [cursor, setCursor] = useState<Date>(() => startOfDay(new Date()));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<{ mode: "create"; date: Date } | { mode: "edit"; event: CalendarEvent } | null>(
@@ -19,46 +41,72 @@ export default function CalendarPage() {
   );
   const [showImportModal, setShowImportModal] = useState(false);
 
+  const { rangeFrom, rangeTo, weekDays } = useMemo(() => {
+    if (view === "month") {
+      const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+      return {
+        rangeFrom: addDays(first, -7),
+        rangeTo: addDays(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1), 7),
+        weekDays: null as Date[] | null,
+      };
+    }
+    if (view === "week") {
+      const start = startOfWeek(cursor);
+      return { rangeFrom: start, rangeTo: addDays(start, 7), weekDays: Array.from({ length: 7 }, (_, i) => addDays(start, i)) };
+    }
+    const start = startOfDay(cursor);
+    return { rangeFrom: start, rangeTo: addDays(start, 1), weekDays: [start] };
+  }, [view, cursor]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const from = new Date(cursor.year, cursor.month, 1);
-    from.setDate(from.getDate() - 7);
-    const to = new Date(cursor.year, cursor.month + 1, 1);
-    to.setDate(to.getDate() + 7);
-
-    const res = await fetch(`/api/events?from=${from.toISOString()}&to=${to.toISOString()}`);
+    const res = await fetch(`/api/events?from=${rangeFrom.toISOString()}&to=${rangeTo.toISOString()}`);
     if (res.ok) {
       const data = await res.json();
       setEvents(data.events);
     }
     setLoading(false);
-  }, [cursor]);
+  }, [rangeFrom, rangeTo]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   function goToday() {
-    const now = new Date();
-    setCursor({ year: now.getFullYear(), month: now.getMonth() });
+    setCursor(startOfDay(new Date()));
   }
   function goPrev() {
-    setCursor((c) => (c.month === 0 ? { year: c.year - 1, month: 11 } : { year: c.year, month: c.month - 1 }));
+    if (view === "month") setCursor((c) => addMonths(new Date(c.getFullYear(), c.getMonth(), 1), -1));
+    else if (view === "week") setCursor((c) => addDays(c, -7));
+    else setCursor((c) => addDays(c, -1));
   }
   function goNext() {
-    setCursor((c) => (c.month === 11 ? { year: c.year + 1, month: 0 } : { year: c.year, month: c.month + 1 }));
+    if (view === "month") setCursor((c) => addMonths(new Date(c.getFullYear(), c.getMonth(), 1), 1));
+    else if (view === "week") setCursor((c) => addDays(c, 7));
+    else setCursor((c) => addDays(c, 1));
   }
 
-  const monthLabel = new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+  const headerLabel = useMemo(() => {
+    if (view === "month") return cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (view === "week" && weekDays) {
+      const start = weekDays[0];
+      const end = weekDays[6];
+      const sameMonth = start.getMonth() === end.getMonth();
+      const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const endLabel = end.toLocaleDateString(
+        undefined,
+        sameMonth ? { day: "numeric", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" },
+      );
+      return `${startLabel} – ${endLabel}`;
+    }
+    return cursor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }, [view, cursor, weekDays]);
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold w-48">{monthLabel}</h1>
+          <h1 className="text-xl font-semibold min-w-48">{headerLabel}</h1>
           <button onClick={goPrev} className="px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-sm">
             ←
           </button>
@@ -79,6 +127,21 @@ export default function CalendarPage() {
               </span>
             ))}
           </div>
+          <div className="flex rounded-md border border-gray-300 dark:border-gray-700 overflow-hidden text-sm">
+            {(["month", "week", "day"] as ViewMode[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 capitalize ${
+                  view === v
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => setShowImportModal(true)}
             className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -96,12 +159,19 @@ export default function CalendarPage() {
 
       {loading && events.length === 0 ? (
         <p className="text-sm text-gray-500">Loading…</p>
-      ) : (
+      ) : view === "month" ? (
         <MonthGrid
-          year={cursor.year}
-          month={cursor.month}
+          year={cursor.getFullYear()}
+          month={cursor.getMonth()}
           events={events}
           onDayClick={(date) => setModal({ mode: "create", date })}
+          onEventClick={(event) => setModal({ mode: "edit", event })}
+        />
+      ) : (
+        <TimeGridView
+          days={weekDays ?? [cursor]}
+          events={events}
+          onSlotClick={(date) => setModal({ mode: "create", date })}
           onEventClick={(event) => setModal({ mode: "edit", event })}
         />
       )}
