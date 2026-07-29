@@ -381,7 +381,7 @@ export default function EventModal({
           <button
             onClick={handleSave}
             disabled={saving}
-            className="rounded-md bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>

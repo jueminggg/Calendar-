@@ -73,7 +73,7 @@ export default function MonthGrid({
           >
             <span
               className={`text-xs inline-flex items-center justify-center w-5 h-5 rounded-full ${
-                isSameDay(day, today) ? "bg-black text-white dark:bg-white dark:text-black" : "text-gray-500"
+                isSameDay(day, today) ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700" : "text-gray-500"
               } ${inMonth ? "" : "opacity-40"}`}
             >
               {day.getDate()}
@@ -89,7 +89,7 @@ export default function MonthGrid({
                       onEventClick(event);
                     }}
                     className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
-                      selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                      selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                     }`}
                     style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source] }}
                     title={event.title}

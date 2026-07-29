@@ -2,7 +2,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   GOOGLE: "#4285F4",
   MICROSOFT: "#7B83EB",
   APPLE: "#8E8E93",
-  NATIVE: "#22C55E",
+  NATIVE: "#EC4899",
 };
 
 export const SOURCE_LABELS: Record<string, string> = {

@@ -185,7 +185,7 @@ export default function CalendarPage() {
                 onClick={() => setView(v)}
                 className={`px-3 py-1.5 capitalize ${
                   view === v
-                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
               >
@@ -233,7 +233,7 @@ export default function CalendarPage() {
               </button>
               <button
                 onClick={() => setModal({ mode: "create", date: new Date() })}
-                className="rounded-md bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-sm font-medium"
+                className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium"
               >
                 + New event
               </button>

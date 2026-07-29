@@ -82,7 +82,7 @@ export default function AppleConnectModal({ onClose, onConnected }: { onClose: (
         <button
           type="submit"
           disabled={saving}
-          className="w-full rounded-md bg-black text-white dark:bg-white dark:text-black py-2 text-sm font-medium disabled:opacity-50"
+          className="w-full rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 py-2 text-sm font-medium disabled:opacity-50"
         >
           {saving ? "Connecting…" : "Connect"}
         </button>

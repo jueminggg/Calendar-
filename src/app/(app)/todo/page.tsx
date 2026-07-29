@@ -180,7 +180,7 @@ export default function TodoPage() {
           <button
             type="submit"
             disabled={adding || !title.trim()}
-            className="ml-auto rounded-md bg-black text-white dark:bg-white dark:text-black px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="ml-auto rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
           >
             {adding ? "Adding…" : "Add"}
           </button>

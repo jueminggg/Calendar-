@@ -35,7 +35,10 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
+    <form
+      onSubmit={onSubmit}
+      className="w-full max-w-sm space-y-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur rounded-2xl shadow-xl p-6"
+    >
       <div>
         <h1 className="text-2xl font-semibold">Sign in</h1>
         <p className="text-sm text-gray-500 mt-1">Access your unified calendar.</p>
@@ -78,7 +81,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-md bg-black text-white dark:bg-white dark:text-black py-2 text-sm font-medium disabled:opacity-50"
+        className="w-full rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 py-2 text-sm font-medium disabled:opacity-50"
       >
         {loading ? "Signing in…" : "Sign in"}
       </button>
@@ -95,7 +98,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="flex-1 flex items-center justify-center p-6">
+    <div className="flex-1 flex items-center justify-center p-6 bow-pattern-bg">
       <Suspense>
         <LoginForm />
       </Suspense>

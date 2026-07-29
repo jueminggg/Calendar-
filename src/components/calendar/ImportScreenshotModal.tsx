@@ -244,7 +244,7 @@ export default function ImportScreenshotModal({
             <button
               onClick={handleImport}
               disabled={importing || drafts.every((d) => !d.include)}
-              className="flex-1 rounded-md bg-black text-white dark:bg-white dark:text-black py-2 text-sm font-medium disabled:opacity-50"
+              className="flex-1 rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 py-2 text-sm font-medium disabled:opacity-50"
             >
               {importing ? "Adding…" : `Add ${drafts.filter((d) => d.include).length} event(s)`}
             </button>

@@ -115,7 +115,7 @@ export default function PushToggle() {
           className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
             status === "on"
               ? "border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-              : "bg-black text-white dark:bg-white dark:text-black"
+              : "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700"
           }`}
         >
           {busy ? "Working…" : status === "on" ? "Disable push on this device" : "Enable push on this device"}

@@ -28,7 +28,7 @@ export default function Nav({ email }: { email: string }) {
   const linkClass = (href: string) =>
     `px-3 py-1.5 rounded-md text-sm font-medium ${
       pathname === href
-        ? "bg-black text-white dark:bg-white dark:text-black"
+        ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700"
         : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
     }`;
 

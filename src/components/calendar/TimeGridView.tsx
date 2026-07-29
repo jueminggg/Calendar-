@@ -102,7 +102,7 @@ export default function TimeGridView({
             <div className="text-gray-500">{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
             <div
               className={`inline-flex items-center justify-center w-6 h-6 rounded-full mt-0.5 ${
-                isSameDay(day, today) ? "bg-black text-white dark:bg-white dark:text-black" : ""
+                isSameDay(day, today) ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700" : ""
               }`}
             >
               {day.getDate()}
@@ -125,7 +125,7 @@ export default function TimeGridView({
                     key={e.id}
                     onClick={() => onEventClick(e)}
                     className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
-                      selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                      selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                     }`}
                     style={{ backgroundColor: e.calendarColor ?? SOURCE_COLORS[e.source] }}
                     title={e.title}
@@ -182,7 +182,7 @@ export default function TimeGridView({
                         onEventClick(p.event);
                       }}
                       className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight text-white overflow-hidden text-left ${
-                        selectedIds ? (selected ? "ring-2 ring-blue-500" : "opacity-40") : ""
+                        selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                       }`}
                       style={{
                         top: p.top,
