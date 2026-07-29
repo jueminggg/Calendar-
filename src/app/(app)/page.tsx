@@ -110,6 +110,22 @@ export default function CalendarPage() {
       setDeleting(false);
     }
   }
+
+  async function deleteAllNative() {
+    if (!window.confirm('Delete ALL "This app" (native) events, across every date? This can\'t be undone.')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/events/native", { method: "DELETE" });
+      if (res.ok) {
+        const data = await res.json();
+        window.alert(`Deleted ${data.count} event(s).`);
+      }
+      await load();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function goPrev() {
     if (view === "month") setCursor((c) => addMonths(new Date(c.getFullYear(), c.getMonth(), 1), -1));
     else if (view === "week") setCursor((c) => addDays(c, -7));
@@ -200,6 +216,14 @@ export default function CalendarPage() {
                 className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Select
+              </button>
+              <button
+                onClick={deleteAllNative}
+                disabled={deleting}
+                className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                title='Delete every "This app" (native) event, across all dates'
+              >
+                {deleting ? "Deleting…" : "Clear all native"}
               </button>
               <button
                 onClick={() => setShowImportModal(true)}
