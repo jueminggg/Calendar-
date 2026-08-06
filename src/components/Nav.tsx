@@ -33,7 +33,7 @@ export default function Nav({ email }: { email: string }) {
     }`;
 
   return (
-    <header className="border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between gap-4">
+    <header className="border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-2">
         <span className="font-semibold text-lg mr-2">Calendar</span>
         <nav className="flex items-center gap-1">

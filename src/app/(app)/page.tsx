@@ -126,6 +126,34 @@ export default function CalendarPage() {
     }
   }
 
+  function handleDayClick(date: Date) {
+    if (selectMode) return;
+    setView("day");
+    setCursor(startOfDay(date));
+  }
+
+  async function handleEventReschedule(event: CalendarEvent, newStart: Date, newEnd: Date) {
+    const previous = events;
+    setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, startAt: newStart.toISOString(), endAt: newEnd.toISOString() } : e)));
+    try {
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startAt: newStart.toISOString(), endAt: newEnd.toISOString() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setEvents(previous);
+        window.alert(data?.error ?? "Couldn't move that event.");
+      } else {
+        await load();
+      }
+    } catch {
+      setEvents(previous);
+      window.alert("Couldn't move that event.");
+    }
+  }
+
   function goPrev() {
     if (view === "month") setCursor((c) => addMonths(new Date(c.getFullYear(), c.getMonth(), 1), -1));
     else if (view === "week") setCursor((c) => addDays(c, -7));
@@ -142,12 +170,11 @@ export default function CalendarPage() {
     if (view === "week" && weekDays) {
       const start = weekDays[0];
       const end = weekDays[6];
-      const sameMonth = start.getMonth() === end.getMonth();
       const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      const endLabel = end.toLocaleDateString(
-        undefined,
-        sameMonth ? { day: "numeric", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" },
-      );
+      // Always include the month here even when start/end share one — omitting
+      // it (passing just { day, year }) is ambiguous per the Intl spec and some
+      // engines render a garbled fallback instead of a plain date.
+      const endLabel = end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
       return `${startLabel} – ${endLabel}`;
     }
     return cursor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -169,7 +196,7 @@ export default function CalendarPage() {
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
             {Object.entries(SOURCE_LABELS).map(([source, label]) => (
               <span key={source} className="flex items-center gap-1">
@@ -253,8 +280,9 @@ export default function CalendarPage() {
           year={cursor.getFullYear()}
           month={cursor.getMonth()}
           events={events}
-          onDayClick={(date) => !selectMode && setModal({ mode: "create", date })}
+          onDayClick={handleDayClick}
           onEventClick={handleEventClick}
+          onEventReschedule={selectMode ? undefined : handleEventReschedule}
           selectedIds={selectMode ? selectedIds : undefined}
         />
       ) : (
@@ -263,6 +291,7 @@ export default function CalendarPage() {
           events={events}
           onSlotClick={(date) => !selectMode && setModal({ mode: "create", date })}
           onEventClick={handleEventClick}
+          onEventReschedule={selectMode ? undefined : handleEventReschedule}
           selectedIds={selectMode ? selectedIds : undefined}
         />
       )}
