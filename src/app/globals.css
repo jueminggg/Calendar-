@@ -19,6 +19,14 @@
   }
 }
 
+html,
+body {
+  /* Belt-and-suspenders: the page itself should never scroll sideways. Any
+     content that's genuinely wider than the viewport (e.g. a wide grid)
+     should scroll within its own container instead. */
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

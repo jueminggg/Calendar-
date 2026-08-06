@@ -115,7 +115,7 @@ export default function MonthGrid({
             key={day.toISOString()}
             data-day-index={dayIndex}
             onClick={() => onDayClick(day)}
-            className={`min-h-[100px] border-b border-r border-gray-200 dark:border-gray-800 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/40 ${
+            className={`min-w-0 min-h-[100px] border-b border-r border-gray-200 dark:border-gray-800 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/40 ${
               inMonth ? "" : "bg-gray-50/50 dark:bg-black/20"
             } ${isDropTarget ? "ring-2 ring-inset ring-pink-500 bg-pink-50 dark:bg-pink-950/40" : ""}`}
           >

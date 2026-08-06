@@ -151,13 +151,13 @@ export default function TimeGridView({
       <div ref={scrollRef} className="overflow-y-auto max-h-[75vh]">
         <div className="grid" style={{ gridTemplateColumns: gridCols }}>
           <div
-            className="sticky top-0 z-20 border-b border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40"
+            className="min-w-0 sticky top-0 z-20 border-b border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40"
             style={{ height: HEADER_HEIGHT }}
           />
           {days.map((day) => (
             <div
               key={`h-${day.toISOString()}`}
-              className="sticky top-0 z-20 text-center text-xs font-medium px-2 py-2 border-b border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40"
+              className="min-w-0 sticky top-0 z-20 text-center text-xs font-medium px-2 py-2 border-b border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40"
               style={{ height: HEADER_HEIGHT }}
             >
               <div className="text-gray-500">{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
@@ -172,7 +172,7 @@ export default function TimeGridView({
           ))}
 
           <div
-            className="sticky z-20 border-r border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 text-[11px] text-gray-400 px-1 py-1"
+            className="min-w-0 sticky z-20 border-r border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 text-[11px] text-gray-400 px-1 py-1"
             style={{ top: HEADER_HEIGHT }}
           >
             All day
@@ -180,7 +180,7 @@ export default function TimeGridView({
           {days.map((day, i) => (
             <div
               key={`ad-${day.toISOString()}`}
-              className="sticky z-20 border-r border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-1 space-y-0.5 min-h-[28px]"
+              className="min-w-0 sticky z-20 border-r border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-1 space-y-0.5 min-h-[28px]"
               style={{ top: HEADER_HEIGHT }}
             >
               {eventsByDay[i]
@@ -205,7 +205,7 @@ export default function TimeGridView({
             </div>
           ))}
 
-          <div>
+          <div className="min-w-0">
             {hours.map((h) => (
               <div
                 key={h}
@@ -223,7 +223,7 @@ export default function TimeGridView({
               eventsByDay[dayIndex].filter((e) => !e.allDay),
             );
             return (
-              <div key={day.toISOString()} className="relative border-r border-gray-200 dark:border-gray-800">
+              <div key={day.toISOString()} className="min-w-0 relative border-r border-gray-200 dark:border-gray-800">
                 {hours.map((h) => (
                   <div
                     key={h}
