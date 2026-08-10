@@ -30,6 +30,9 @@ function startOfWeek(d: Date): Date {
   r.setDate(r.getDate() - r.getDay());
   return r;
 }
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
 
 export default function CalendarPage() {
   const [view, setView] = useState<ViewMode>("month");
@@ -130,6 +133,19 @@ export default function CalendarPage() {
     if (selectMode) return;
     setView("day");
     setCursor(startOfDay(date));
+  }
+
+  /** What date/time "+ New event" should default to — the day currently being viewed, not always today. */
+  function defaultNewEventDate(): Date {
+    const now = new Date();
+    if (view === "month") {
+      if (now.getFullYear() === cursor.getFullYear() && now.getMonth() === cursor.getMonth()) return now;
+      return new Date(cursor.getFullYear(), cursor.getMonth(), 1, 9, 0, 0, 0);
+    }
+    if (isSameDay(cursor, now)) return now;
+    const d = new Date(cursor);
+    d.setHours(9, 0, 0, 0);
+    return d;
   }
 
   async function handleEventReschedule(event: CalendarEvent, newStart: Date, newEnd: Date) {
@@ -259,7 +275,7 @@ export default function CalendarPage() {
                 Import screenshot
               </button>
               <button
-                onClick={() => setModal({ mode: "create", date: new Date() })}
+                onClick={() => setModal({ mode: "create", date: defaultNewEventDate() })}
                 className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium"
               >
                 + New event

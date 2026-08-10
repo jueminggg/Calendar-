@@ -17,16 +17,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "from and to query params are required (ISO dates)" }, { status: 400 });
   }
 
-  const events = await prisma.event.findMany({
-    where: {
-      userId: session.userId,
-      status: { not: "CANCELLED" },
-      startAt: { lte: new Date(to) },
-      endAt: { gte: new Date(from) },
-    },
-    include: { calendarList: { include: { connection: true } } },
-    orderBy: { startAt: "asc" },
-  });
+  const [events, user] = await Promise.all([
+    prisma.event.findMany({
+      where: {
+        userId: session.userId,
+        status: { not: "CANCELLED" },
+        startAt: { lte: new Date(to) },
+        endAt: { gte: new Date(from) },
+      },
+      include: { calendarList: { include: { connection: true } } },
+      orderBy: { startAt: "asc" },
+    }),
+    prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } }),
+  ]);
 
   return NextResponse.json({
     events: events.map((e) => ({
@@ -44,9 +47,10 @@ export async function GET(request: NextRequest) {
       calendarName: e.calendarList?.name ?? "My Calendar",
       calendarColor: e.calendarList?.color ?? null,
       connectionLabel: e.calendarList?.connection.label ?? null,
-      editable: true,
+      editable: e.source === "NATIVE" || user.externalWriteEnabled,
       recurrenceRule: e.recurrenceRule,
       recurringEventId: e.recurringEventId,
+      reminderMinutesBefore: e.reminderMinutesBefore,
     })),
   });
 }
@@ -77,6 +81,8 @@ const createSchema = z.object({
   // When set, materializes one Event row per occurrence (native only — see
   // src/lib/recurrence.ts for why this isn't stored as a single RRULE row).
   recurrence: recurrenceSchema.optional(),
+  // Minutes before the event to send a push/Telegram reminder; purely local metadata.
+  reminderMinutesBefore: z.number().int().min(0).max(43200).nullable().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -90,6 +96,16 @@ export async function POST(request: NextRequest) {
   }
   const data = parsed.data;
   const targets = data.targets && data.targets.length > 0 ? data.targets : [NATIVE_TARGET];
+
+  if (targets.some((t) => t !== NATIVE_TARGET)) {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+    if (!user.externalWriteEnabled) {
+      return NextResponse.json(
+        { error: "Two-way sync is turned off, so this app can't create events on Google/Outlook/iCloud — uncheck those calendars, or turn it back on in Connections." },
+        { status: 400 },
+      );
+    }
+  }
 
   const writeInput = {
     title: data.title,
@@ -129,6 +145,7 @@ export async function POST(request: NextRequest) {
             status: "CONFIRMED",
             recurrenceRule,
             recurringEventId: seriesId,
+            reminderMinutesBefore: data.reminderMinutesBefore ?? null,
           },
         }),
       ),
@@ -163,6 +180,7 @@ export async function POST(request: NextRequest) {
         allDay: writeInput.allDay,
         timezone: writeInput.timezone,
         status: "CONFIRMED",
+        reminderMinutesBefore: data.reminderMinutesBefore ?? null,
       },
     });
     createdEvents.push(event);
@@ -188,6 +206,7 @@ export async function POST(request: NextRequest) {
           status: "CONFIRMED",
           providerUpdatedAt: result.providerUpdatedAt,
           providerEtag: result.providerEtag,
+          reminderMinutesBefore: data.reminderMinutesBefore ?? null,
         },
       });
       createdEvents.push(event);

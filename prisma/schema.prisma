@@ -64,6 +64,22 @@ model User {
   lastMorningReminderSentAt DateTime?
   lastEveningReminderSentAt DateTime?
 
+  // If false, editing/deleting a Google/Outlook/iCloud-sourced event in this
+  // app only updates our own copy — it never calls back out to the provider.
+  // Native events and pulling changes IN from providers are unaffected.
+  externalWriteEnabled Boolean @default(true)
+
+  // Telegram bot linking + daily agenda messages ("HH:MM" in the timezone above)
+  telegramChatId                  String?   @unique
+  telegramLinkCode                String?   @unique
+  telegramLinkCodeExpiresAt       DateTime?
+  telegramMorningAgendaEnabled    Boolean   @default(false)
+  telegramMorningAgendaTime       String    @default("08:00")
+  telegramEveningAgendaEnabled    Boolean   @default(false)
+  telegramEveningAgendaTime       String    @default("21:00")
+  lastTelegramMorningAgendaSentAt DateTime?
+  lastTelegramEveningAgendaSentAt DateTime?
+
   connections       CalendarConnection[]
   events            Event[]
   notifications     Notification[]
@@ -192,6 +208,11 @@ model Event {
   providerUpdatedAt DateTime? // provider's own "last modified", used to detect edits
   providerEtag      String?
   raw               Json?     // original provider payload, kept for debugging/re-sync
+
+  // Per-event custom reminder, independent of the daily planning reminders.
+  // Minutes before startAt to send a push/Telegram alert; null = no custom reminder.
+  reminderMinutesBefore Int?
+  reminderSentAt        DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

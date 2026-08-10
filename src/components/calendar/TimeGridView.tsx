@@ -52,6 +52,9 @@ function layoutDay(day: Date, dayEvents: CalendarEvent[]): Placed[] {
   }));
 }
 
+const LONG_PRESS_MS = 400;
+const MOVE_CANCEL_PX = 8;
+
 type DragState = {
   eventId: string;
   dayIndex: number;
@@ -61,6 +64,8 @@ type DragState = {
   liveTop: number;
   height: number;
   durationMs: number;
+  /** True once the long-press hold has completed — before that, moving the pointer just scrolls. */
+  armed: boolean;
 };
 
 export default function TimeGridView({
@@ -84,6 +89,14 @@ export default function TimeGridView({
   const today = new Date();
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+
+  function clearLongPressTimer() {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 7 * HOUR_HEIGHT });
@@ -107,11 +120,12 @@ export default function TimeGridView({
   const gridCols = `56px repeat(${days.length}, 1fr)`;
 
   function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, p: Placed, dayIndex: number) {
-    if (!onEventReschedule) return;
+    if (!onEventReschedule || p.event.editable === false) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    const eventId = p.event.id;
     setDragState({
-      eventId: p.event.id,
+      eventId,
       dayIndex,
       pointerId: e.pointerId,
       startClientY: e.clientY,
@@ -119,22 +133,38 @@ export default function TimeGridView({
       liveTop: p.top,
       height: p.height,
       durationMs: new Date(p.event.endAt).getTime() - new Date(p.event.startAt).getTime(),
+      armed: false,
     });
+    clearLongPressTimer();
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      setDragState((prev) => (prev && prev.eventId === eventId ? { ...prev, armed: true } : prev));
+    }, LONG_PRESS_MS);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLButtonElement>) {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
     const deltaY = e.clientY - dragState.startClientY;
+    if (!dragState.armed) {
+      // Moved before the long-press completed — treat as a scroll/tap gesture, not a drag.
+      if (Math.abs(deltaY) > MOVE_CANCEL_PX) {
+        clearLongPressTimer();
+        setDragState(null);
+      }
+      return;
+    }
     const maxTop = 24 * HOUR_HEIGHT - dragState.height;
     const newTop = Math.min(Math.max(dragState.originTop + deltaY, 0), maxTop);
     setDragState((prev) => (prev ? { ...prev, liveTop: newTop } : prev));
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLButtonElement>, p: Placed, dayIndex: number) {
+    clearLongPressTimer();
     if (!dragState || e.pointerId !== dragState.pointerId) return;
+    const wasArmed = dragState.armed;
     const moved = Math.abs(dragState.liveTop - dragState.originTop);
     setDragState(null);
-    if (moved < 4) {
+    if (!wasArmed || moved < 4) {
       onEventClick(p.event);
       return;
     }
@@ -144,6 +174,11 @@ export default function TimeGridView({
     const newStart = new Date(dayStart.getTime() + minutesFromMidnight * 60000);
     const newEnd = new Date(newStart.getTime() + dragState.durationMs);
     onEventReschedule?.(p.event, newStart, newEnd);
+  }
+
+  function handlePointerCancel() {
+    clearLongPressTimer();
+    setDragState(null);
   }
 
   return (
@@ -238,8 +273,10 @@ export default function TimeGridView({
                 ))}
                 {placed.map((p) => {
                   const selected = selectedIds?.has(p.event.id);
-                  const isDragging = dragState?.eventId === p.event.id && dragState.dayIndex === dayIndex;
-                  const top = isDragging ? dragState.liveTop : p.top;
+                  const isPressing = dragState?.eventId === p.event.id && dragState.dayIndex === dayIndex;
+                  const isDragging = isPressing && dragState!.armed;
+                  const top = isDragging ? dragState!.liveTop : p.top;
+                  const canDrag = Boolean(onEventReschedule) && p.event.editable !== false;
                   return (
                     <button
                       key={p.event.id}
@@ -250,16 +287,17 @@ export default function TimeGridView({
                       onPointerDown={(e) => handlePointerDown(e, p, dayIndex)}
                       onPointerMove={handlePointerMove}
                       onPointerUp={(e) => handlePointerUp(e, p, dayIndex)}
+                      onPointerCancel={handlePointerCancel}
                       className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight text-white overflow-hidden text-left ${
                         selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
-                      } ${isDragging ? "shadow-lg z-30 opacity-90" : ""} ${onEventReschedule ? "cursor-grab active:cursor-grabbing" : ""}`}
+                      } ${isDragging ? "shadow-lg z-30 opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{
                         top,
                         height: Math.max(p.height, 18),
                         left: isDragging ? 0 : `${(p.col / p.totalCols) * 100}%`,
                         width: isDragging ? "100%" : `${100 / p.totalCols}%`,
                         backgroundColor: p.event.calendarColor ?? SOURCE_COLORS[p.event.source],
-                        touchAction: onEventReschedule ? "none" : undefined,
+                        touchAction: canDrag ? "none" : undefined,
                       }}
                       title={p.event.title}
                     >

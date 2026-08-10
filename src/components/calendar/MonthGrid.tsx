@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
 import { SOURCE_COLORS } from "@/lib/event-colors";
+
+const LONG_PRESS_MS = 400;
+const MOVE_CANCEL_PX = 8;
 
 function startOfMonthGrid(year: number, month: number): Date {
   const first = new Date(year, month, 1);
@@ -16,7 +19,15 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-type DragState = { eventId: string; pointerId: number; startClientX: number; startClientY: number; overDayIndex: number | null };
+type DragState = {
+  eventId: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  overDayIndex: number | null;
+  /** True once the long-press hold has completed — before that, moving the pointer just scrolls. */
+  armed: boolean;
+};
 
 export default function MonthGrid({
   year,
@@ -45,6 +56,14 @@ export default function MonthGrid({
   });
   const today = new Date();
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+
+  function clearLongPressTimer() {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
 
   function dayIndexAtPoint(clientX: number, clientY: number): number | null {
     const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-day-index]");
@@ -53,25 +72,47 @@ export default function MonthGrid({
     return Number.isNaN(idx) ? null : idx;
   }
 
-  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, eventId: string) {
-    if (!onEventReschedule) return;
+  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, event: CalendarEvent) {
+    if (!onEventReschedule || event.editable === false) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDragState({ eventId, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, overDayIndex: null });
+    const eventId = event.id;
+    setDragState({
+      eventId,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      overDayIndex: null,
+      armed: false,
+    });
+    clearLongPressTimer();
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      setDragState((prev) => (prev && prev.eventId === eventId ? { ...prev, armed: true } : prev));
+    }, LONG_PRESS_MS);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLButtonElement>) {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
+    if (!dragState.armed) {
+      const moved = Math.hypot(e.clientX - dragState.startClientX, e.clientY - dragState.startClientY);
+      if (moved > MOVE_CANCEL_PX) {
+        clearLongPressTimer();
+        setDragState(null);
+      }
+      return;
+    }
     const overDayIndex = dayIndexAtPoint(e.clientX, e.clientY);
     setDragState((prev) => (prev ? { ...prev, overDayIndex } : prev));
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLButtonElement>, event: CalendarEvent) {
+    clearLongPressTimer();
     if (!dragState || e.pointerId !== dragState.pointerId) return;
-    const moved = Math.hypot(e.clientX - dragState.startClientX, e.clientY - dragState.startClientY);
+    const wasArmed = dragState.armed;
     const overDayIndex = dragState.overDayIndex;
     setDragState(null);
-    if (moved < 6 || overDayIndex === null) {
+    if (!wasArmed || overDayIndex === null) {
       onEventClick(event);
       return;
     }
@@ -83,6 +124,11 @@ export default function MonthGrid({
     newStart.setHours(oldStart.getHours(), oldStart.getMinutes(), oldStart.getSeconds(), 0);
     const newEnd = new Date(newStart.getTime() + durationMs);
     onEventReschedule?.(event, newStart, newEnd);
+  }
+
+  function handlePointerCancel() {
+    clearLongPressTimer();
+    setDragState(null);
   }
 
   return (
@@ -108,7 +154,7 @@ export default function MonthGrid({
 
         const visible = dayEvents.slice(0, 3);
         const overflow = dayEvents.length - visible.length;
-        const isDropTarget = dragState !== null && dragState.overDayIndex === dayIndex;
+        const isDropTarget = dragState !== null && dragState.armed && dragState.overDayIndex === dayIndex;
 
         return (
           <div
@@ -129,6 +175,9 @@ export default function MonthGrid({
             <div className="mt-1 space-y-0.5">
               {visible.map((event) => {
                 const selected = selectedIds?.has(event.id);
+                const isPressing = dragState?.eventId === event.id;
+                const isDragging = isPressing && dragState!.armed;
+                const canDrag = Boolean(onEventReschedule) && event.editable !== false;
                 return (
                   <button
                     key={event.id}
@@ -136,13 +185,14 @@ export default function MonthGrid({
                       e.stopPropagation();
                       if (!onEventReschedule) onEventClick(event);
                     }}
-                    onPointerDown={(e) => handlePointerDown(e, event.id)}
+                    onPointerDown={(e) => handlePointerDown(e, event)}
                     onPointerMove={handlePointerMove}
                     onPointerUp={(e) => handlePointerUp(e, event)}
+                    onPointerCancel={handlePointerCancel}
                     className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
                       selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
-                    } ${onEventReschedule ? "cursor-grab active:cursor-grabbing" : ""}`}
-                    style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source], touchAction: onEventReschedule ? "none" : undefined }}
+                    } ${isDragging ? "shadow-lg opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source], touchAction: canDrag ? "none" : undefined }}
                     title={event.title}
                   >
                     {selected ? "✓ " : ""}

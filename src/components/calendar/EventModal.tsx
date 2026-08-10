@@ -8,6 +8,19 @@ import { describeRecurrence } from "@/lib/recurrence";
 type CalendarOption = { id: string; name: string; provider: "GOOGLE" | "MICROSOFT" | "APPLE" };
 type RepeatFreq = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
+const REMINDER_OPTIONS: { label: string; value: string }[] = [
+  { label: "No reminder", value: "" },
+  { label: "At time of event", value: "0" },
+  { label: "5 minutes before", value: "5" },
+  { label: "15 minutes before", value: "15" },
+  { label: "30 minutes before", value: "30" },
+  { label: "1 hour before", value: "60" },
+  { label: "2 hours before", value: "120" },
+  { label: "1 day before", value: "1440" },
+];
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
 function defaultUntil(): string {
   const d = new Date();
   d.setMonth(d.getMonth() + 3);
@@ -36,7 +49,7 @@ export default function EventModal({
   const defaultStart = existing ? new Date(existing.startAt) : (initialDate ?? new Date());
   const defaultEnd = existing
     ? new Date(existing.endAt)
-    : new Date((initialDate ?? new Date()).getTime() + 60 * 60 * 1000);
+    : new Date((initialDate ?? new Date()).getTime() + ONE_HOUR_MS);
 
   const [title, setTitle] = useState(existing?.title ?? "");
   const [location, setLocation] = useState(existing?.location ?? "");
@@ -52,6 +65,11 @@ export default function EventModal({
   const [repeatEndType, setRepeatEndType] = useState<"count" | "until">("count");
   const [repeatCount, setRepeatCount] = useState(10);
   const [repeatUntil, setRepeatUntil] = useState(defaultUntil);
+  const [externalWriteEnabled, setExternalWriteEnabled] = useState(true);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(existing?.reminderMinutesBefore ?? null);
+  const [reminderSaving, setReminderSaving] = useState(false);
+
+  const isReadOnly = Boolean(existing && existing.source !== "NATIVE" && existing.editable === false);
 
   function toggleTarget(id: string) {
     setSelectedTargets((prev) => {
@@ -69,6 +87,39 @@ export default function EventModal({
     if (freq !== "NONE") setSelectedTargets(new Set(["native"]));
   }
 
+  function handleStartChange(value: string) {
+    setStart(value);
+    if (allDay) return;
+    // Keep at least a 1-hour gap: if the new start would leave less than an
+    // hour before the current end, push the end forward instead of allowing
+    // a zero/negative-length event.
+    if (new Date(end).getTime() - new Date(value).getTime() < ONE_HOUR_MS) {
+      setEnd(toLocalInputValue(new Date(new Date(value).getTime() + ONE_HOUR_MS).toISOString()));
+    }
+  }
+
+  function handleEndChange(value: string) {
+    if (allDay) {
+      setEnd(value);
+      return;
+    }
+    // Clamp: end must be at least 1 hour after start.
+    if (new Date(value).getTime() - new Date(start).getTime() < ONE_HOUR_MS) {
+      setEnd(toLocalInputValue(new Date(new Date(start).getTime() + ONE_HOUR_MS).toISOString()));
+    } else {
+      setEnd(value);
+    }
+  }
+
+  useEffect(() => {
+    fetch("/api/settings/sync")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setExternalWriteEnabled(data.externalWriteEnabled);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (existing) return; // calendar picker only applies to new events
     fetch("/api/connections")
@@ -85,6 +136,22 @@ export default function EventModal({
       })
       .catch(() => {});
   }, [existing]);
+
+  async function handleReminderChange(value: string) {
+    const minutes = value === "" ? null : Number(value);
+    setReminderMinutesBefore(minutes);
+    if (!existing) return; // for new events, it's just included in the create payload on Save
+    setReminderSaving(true);
+    try {
+      await fetch(`/api/events/${existing.id}/reminder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reminderMinutesBefore: minutes }),
+      });
+    } finally {
+      setReminderSaving(false);
+    }
+  }
 
   async function handleSave() {
     setError(null);
@@ -109,6 +176,7 @@ export default function EventModal({
           ? {}
           : {
               targets: Array.from(selectedTargets),
+              reminderMinutesBefore,
               ...(repeatFreq !== "NONE"
                 ? {
                     recurrence: {
@@ -147,7 +215,12 @@ export default function EventModal({
     try {
       const url = `/api/events/${existing.id}${scope === "series" ? "?scope=series" : ""}`;
       const res = await fetch(url, { method: "DELETE" });
-      if (res.ok) onDeleted?.();
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        onDeleted?.();
+      } else {
+        setError(data?.error ?? "Something went wrong");
+      }
     } finally {
       setSaving(false);
     }
@@ -177,9 +250,16 @@ export default function EventModal({
           </div>
         )}
 
-        {existing && existing.source !== "NATIVE" && (
+        {existing && existing.source !== "NATIVE" && !isReadOnly && (
           <p className="text-xs bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded px-2 py-1.5">
             Changes here are saved back to {SOURCE_LABELS[existing.source]} too.
+          </p>
+        )}
+
+        {isReadOnly && (
+          <p className="text-xs bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded px-2 py-1.5">
+            Two-way sync is off, so this event can only be edited on {SOURCE_LABELS[existing!.source]} itself — you can
+            still set a personal reminder for it below. Turn two-way sync back on in Connections to edit it here.
           </p>
         )}
 
@@ -199,25 +279,28 @@ export default function EventModal({
                 />
                 This app only (native)
               </label>
-              {calendarOptions.map((opt) => (
-                <label
-                  key={opt.id}
-                  className={`flex items-center gap-2 text-sm ${repeatFreq !== "NONE" ? "opacity-40" : ""}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={repeatFreq !== "NONE"}
-                    checked={selectedTargets.has(opt.id)}
-                    onChange={() => toggleTarget(opt.id)}
-                  />
-                  {opt.name} ({SOURCE_LABELS[opt.provider]})
-                </label>
-              ))}
+              {externalWriteEnabled &&
+                calendarOptions.map((opt) => (
+                  <label
+                    key={opt.id}
+                    className={`flex items-center gap-2 text-sm ${repeatFreq !== "NONE" ? "opacity-40" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={repeatFreq !== "NONE"}
+                      checked={selectedTargets.has(opt.id)}
+                      onChange={() => toggleTarget(opt.id)}
+                    />
+                    {opt.name} ({SOURCE_LABELS[opt.provider]})
+                  </label>
+                ))}
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              {repeatFreq !== "NONE"
-                ? "Recurring events can only be added natively for now."
-                : "Select more than one to add this event to several calendars at once."}
+              {!externalWriteEnabled
+                ? "Two-way sync is off (Connections page), so new events can only be added natively."
+                : repeatFreq !== "NONE"
+                  ? "Recurring events can only be added natively for now."
+                  : "Select more than one to add this event to several calendars at once."}
             </p>
           </div>
         )}
@@ -235,18 +318,15 @@ export default function EventModal({
             </label>
             <input
               id="event-title"
+              disabled={isReadOnly}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
             />
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={allDay}
-              onChange={(e) => setAllDay(e.target.checked)}
-            />
+            <input type="checkbox" disabled={isReadOnly} checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
             All day
           </label>
 
@@ -254,19 +334,21 @@ export default function EventModal({
             <div>
               <label className="text-sm font-medium">Starts</label>
               <input
+                disabled={isReadOnly}
                 type={allDay ? "date" : "datetime-local"}
                 value={allDay ? start.slice(0, 10) : start}
-                onChange={(e) => setStart(e.target.value)}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+                onChange={(e) => handleStartChange(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
               />
             </div>
             <div>
               <label className="text-sm font-medium">Ends</label>
               <input
+                disabled={isReadOnly}
                 type={allDay ? "date" : "datetime-local"}
                 value={allDay ? end.slice(0, 10) : end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+                onChange={(e) => handleEndChange(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
               />
             </div>
           </div>
@@ -325,20 +407,40 @@ export default function EventModal({
           <div>
             <label className="text-sm font-medium">Location</label>
             <input
+              disabled={isReadOnly}
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
             />
           </div>
 
           <div>
             <label className="text-sm font-medium">Description</label>
             <textarea
+              disabled={isReadOnly}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1 disabled:opacity-60"
             />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium">Reminder</label>
+            <select
+              value={reminderMinutesBefore === null ? "" : String(reminderMinutesBefore)}
+              onChange={(e) => handleReminderChange(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 text-sm mt-1"
+            >
+              {REMINDER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              {reminderSaving ? "Saving…" : "Sent as a push notification (and Telegram, if linked). Works regardless of two-way sync."}
+            </p>
           </div>
 
           {existing?.attendees && existing.attendees.length > 0 && (
@@ -378,13 +480,15 @@ export default function EventModal({
           ) : (
             <span />
           )}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </div>
     </div>

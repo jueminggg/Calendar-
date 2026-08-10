@@ -59,5 +59,39 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Per-event reminders are independent of the daily morning/evening toggle
+  // above — they fire for any user with a reminder set on a specific event,
+  // regardless of whether daily planning reminders are enabled.
+  const nowUtc = DateTime.utc();
+  const dueEvents = await prisma.event.findMany({
+    where: {
+      reminderMinutesBefore: { not: null },
+      reminderSentAt: null,
+      // Grace window: skip events whose reminder time has been due for over
+      // an hour, so a scheduler outage doesn't fire a pile of stale alerts.
+      startAt: { gte: nowUtc.minus({ hours: 1 }).toJSDate() },
+    },
+    select: {
+      id: true,
+      userId: true,
+      title: true,
+      location: true,
+      startAt: true,
+      reminderMinutesBefore: true,
+      user: { select: { timezone: true } },
+    },
+  });
+
+  for (const event of dueEvents) {
+    const fireAt = DateTime.fromJSDate(event.startAt).minus({ minutes: event.reminderMinutesBefore ?? 0 });
+    if (nowUtc < fireAt) continue;
+    const tz = event.user.timezone || "UTC";
+    const timeLabel = DateTime.fromJSDate(event.startAt).setZone(tz).toLocaleString(DateTime.TIME_SIMPLE);
+    const body = event.location ? `${timeLabel} · ${event.location}` : timeLabel;
+    await sendPushToUser(event.userId, { title: event.title, body, url: "/" });
+    await prisma.event.update({ where: { id: event.id }, data: { reminderSentAt: nowUtc.toJSDate() } });
+    sent++;
+  }
+
   return NextResponse.json({ checked: users.length, sent });
 }

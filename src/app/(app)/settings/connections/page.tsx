@@ -44,6 +44,9 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true);
   const [showAppleModal, setShowAppleModal] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [externalWriteEnabled, setExternalWriteEnabled] = useState(true);
+  const [syncToggleLoading, setSyncToggleLoading] = useState(true);
+  const [syncToggleSaving, setSyncToggleSaving] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/connections");
@@ -57,6 +60,40 @@ export default function ConnectionsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch("/api/settings/sync");
+      if (res.ok) {
+        const data = await res.json();
+        setExternalWriteEnabled(data.externalWriteEnabled);
+      }
+      setSyncToggleLoading(false);
+    })();
+  }, []);
+
+  async function toggleExternalWrite() {
+    const next = !externalWriteEnabled;
+    setSyncToggleSaving(true);
+    setExternalWriteEnabled(next);
+    try {
+      const res = await fetch("/api/settings/sync", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ externalWriteEnabled: next }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExternalWriteEnabled(data.externalWriteEnabled);
+      } else {
+        setExternalWriteEnabled(!next);
+      }
+    } catch {
+      setExternalWriteEnabled(!next);
+    } finally {
+      setSyncToggleSaving(false);
+    }
+  }
 
   async function syncNow(id: string) {
     setSyncingId(id);
@@ -81,6 +118,34 @@ export default function ConnectionsPage() {
       <Suspense>
         <ConnectionsBanner />
       </Suspense>
+
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 p-4 mb-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-medium">Two-way sync</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {externalWriteEnabled
+                ? "On — editing or deleting a synced event here also changes it on Google/Outlook/iCloud."
+                : "Off — this app never writes to Google/Outlook/iCloud. Changes here only affect your own copy; changes made on those calendars still sync in."}
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={externalWriteEnabled}
+            disabled={syncToggleLoading || syncToggleSaving}
+            onClick={toggleExternalWrite}
+            className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+              externalWriteEnabled ? "bg-pink-600" : "bg-gray-300 dark:bg-gray-700"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                externalWriteEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-2 mb-6">
         <a

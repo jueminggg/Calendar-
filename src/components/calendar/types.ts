@@ -16,4 +16,5 @@ export type CalendarEvent = {
   editable: boolean;
   recurrenceRule: string | null;
   recurringEventId: string | null;
+  reminderMinutesBefore: number | null;
 };
