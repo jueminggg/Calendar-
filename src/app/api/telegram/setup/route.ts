@@ -14,7 +14,16 @@ export async function GET(request: NextRequest) {
 
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!secret) {
-    return NextResponse.json({ error: "Set TELEGRAM_WEBHOOK_SECRET in your environment first." }, { status: 400 });
+    // Report whether the *other* Telegram env var is visible too — if neither
+    // is, the whole env var group likely isn't reaching this deployment
+    // (wrong project/environment), rather than a typo in this one name.
+    return NextResponse.json(
+      {
+        error: "Set TELEGRAM_WEBHOOK_SECRET in your environment first.",
+        debug: { telegramBotTokenAlsoSet: Boolean(process.env.TELEGRAM_BOT_TOKEN) },
+      },
+      { status: 400 },
+    );
   }
 
   const webhookUrl = new URL("/api/webhooks/telegram", request.nextUrl.origin).toString();
