@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
       recurrenceRule: e.recurrenceRule,
       recurringEventId: e.recurringEventId,
       reminderMinutesBefore: e.reminderMinutesBefore,
+      importedVia: e.importedVia,
     })),
   });
 }

@@ -214,6 +214,12 @@ model Event {
   reminderMinutesBefore Int?
   reminderSentAt        DateTime?
 
+  // Only meaningful for source == NATIVE: how the event got into the app,
+  // for display purposes (e.g. "Screenshot" vs "Manually added"). Null means
+  // typed directly into the app. "screenshot" means added via /events/import
+  // after Claude read it out of a pasted/uploaded image.
+  importedVia String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -17,4 +17,5 @@ export type CalendarEvent = {
   recurrenceRule: string | null;
   recurringEventId: string | null;
   reminderMinutesBefore: number | null;
+  importedVia: string | null;
 };

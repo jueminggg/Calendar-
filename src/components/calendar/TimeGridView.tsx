@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS } from "@/lib/event-colors";
+import { SOURCE_COLORS, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
 
 const HOUR_HEIGHT = 48; // px
 const HEADER_HEIGHT = 56; // px, the sticky day-of-week/date row
@@ -230,10 +230,10 @@ export default function TimeGridView({
                         selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                       }`}
                       style={{ backgroundColor: e.calendarColor ?? SOURCE_COLORS[e.source] }}
-                      title={e.title}
+                      title={`${e.title} (${eventSourceFullLabel(e)})`}
                     >
                       {selected ? "✓ " : ""}
-                      {e.title}
+                      {e.title} <span className="opacity-75">({eventSourceTag(e)})</span>
                     </button>
                   );
                 })}
@@ -299,10 +299,10 @@ export default function TimeGridView({
                         backgroundColor: p.event.calendarColor ?? SOURCE_COLORS[p.event.source],
                         touchAction: canDrag ? "none" : undefined,
                       }}
-                      title={p.event.title}
+                      title={`${p.event.title} (${eventSourceFullLabel(p.event)})`}
                     >
                       {selected ? "✓ " : ""}
-                      {p.event.title}
+                      {p.event.title} <span className="opacity-75">({eventSourceTag(p.event)})</span>
                     </button>
                   );
                 })}

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS } from "@/lib/event-colors";
+import { SOURCE_COLORS, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
 
 const LONG_PRESS_MS = 400;
 const MOVE_CANCEL_PX = 8;
@@ -193,11 +193,11 @@ export default function MonthGrid({
                       selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                     } ${isDragging ? "shadow-lg opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
                     style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source], touchAction: canDrag ? "none" : undefined }}
-                    title={event.title}
+                    title={`${event.title} (${eventSourceFullLabel(event)})`}
                   >
                     {selected ? "✓ " : ""}
                     {event.allDay ? "" : `${new Date(event.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} `}
-                    {event.title}
+                    {event.title} <span className="opacity-75">({eventSourceTag(event)})</span>
                   </button>
                 );
               })}

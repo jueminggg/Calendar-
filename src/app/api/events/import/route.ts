@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
         data: {
           userId: session.userId,
           source: "NATIVE",
+          importedVia: "screenshot",
           title: e.title,
           description: e.description,
           location: e.location,
