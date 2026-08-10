@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/push";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 /**
  * True once local time has reached (or just passed) the target HH:MM, within
@@ -19,6 +20,31 @@ function isDue(now: DateTime, target: string): boolean {
 function alreadySentToday(sentAt: Date | null, tz: string, todayKey: string): boolean {
   if (!sentAt) return false;
   return DateTime.fromJSDate(sentAt).setZone(tz).toISODate() === todayKey;
+}
+
+async function fetchAgendaEvents(userId: string, rangeStart: DateTime, rangeEnd: DateTime) {
+  return prisma.event.findMany({
+    where: {
+      userId,
+      startAt: { lt: rangeEnd.toJSDate() },
+      endAt: { gt: rangeStart.toJSDate() },
+    },
+    orderBy: { startAt: "asc" },
+    select: { title: true, startAt: true, allDay: true, location: true },
+  });
+}
+
+function formatAgenda(
+  label: string,
+  events: { title: string; startAt: Date; allDay: boolean; location: string | null }[],
+  tz: string,
+): string {
+  if (events.length === 0) return `${label}\nNothing on your calendar.`;
+  const lines = events.map((e) => {
+    const time = e.allDay ? "All day" : DateTime.fromJSDate(e.startAt).setZone(tz).toLocaleString(DateTime.TIME_SIMPLE);
+    return e.location ? `• ${time} — ${e.title} (${e.location})` : `• ${time} — ${e.title}`;
+  });
+  return `${label}\n${lines.join("\n")}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -59,9 +85,50 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Telegram daily agenda messages: independent of the push-based daily
+  // reminders above, gated on their own enabled flags + having linked a chat.
+  const telegramUsers = await prisma.user.findMany({
+    where: {
+      telegramChatId: { not: null },
+      OR: [{ telegramMorningAgendaEnabled: true }, { telegramEveningAgendaEnabled: true }],
+    },
+  });
+
+  for (const user of telegramUsers) {
+    if (!user.telegramChatId) continue;
+    const tz = user.timezone || "UTC";
+    const now = DateTime.now().setZone(tz);
+    const todayKey = now.toISODate() ?? "";
+
+    if (
+      user.telegramMorningAgendaEnabled &&
+      !alreadySentToday(user.lastTelegramMorningAgendaSentAt, tz, todayKey) &&
+      isDue(now, user.telegramMorningAgendaTime)
+    ) {
+      const todayStart = now.startOf("day");
+      const events = await fetchAgendaEvents(user.id, todayStart, todayStart.plus({ days: 1 }));
+      await sendTelegramMessage(user.telegramChatId, formatAgenda("Today's agenda", events, tz));
+      await prisma.user.update({ where: { id: user.id }, data: { lastTelegramMorningAgendaSentAt: now.toJSDate() } });
+      sent++;
+    }
+
+    if (
+      user.telegramEveningAgendaEnabled &&
+      !alreadySentToday(user.lastTelegramEveningAgendaSentAt, tz, todayKey) &&
+      isDue(now, user.telegramEveningAgendaTime)
+    ) {
+      const tomorrowStart = now.startOf("day").plus({ days: 1 });
+      const events = await fetchAgendaEvents(user.id, tomorrowStart, tomorrowStart.plus({ days: 1 }));
+      await sendTelegramMessage(user.telegramChatId, formatAgenda("Tomorrow's agenda", events, tz));
+      await prisma.user.update({ where: { id: user.id }, data: { lastTelegramEveningAgendaSentAt: now.toJSDate() } });
+      sent++;
+    }
+  }
+
   // Per-event reminders are independent of the daily morning/evening toggle
   // above — they fire for any user with a reminder set on a specific event,
-  // regardless of whether daily planning reminders are enabled.
+  // regardless of whether daily planning reminders are enabled. They go out
+  // over push and, if linked, Telegram (with location/description included).
   const nowUtc = DateTime.utc();
   const dueEvents = await prisma.event.findMany({
     where: {
@@ -75,10 +142,11 @@ export async function GET(request: NextRequest) {
       id: true,
       userId: true,
       title: true,
+      description: true,
       location: true,
       startAt: true,
       reminderMinutesBefore: true,
-      user: { select: { timezone: true } },
+      user: { select: { timezone: true, telegramChatId: true } },
     },
   });
 
@@ -89,6 +157,12 @@ export async function GET(request: NextRequest) {
     const timeLabel = DateTime.fromJSDate(event.startAt).setZone(tz).toLocaleString(DateTime.TIME_SIMPLE);
     const body = event.location ? `${timeLabel} · ${event.location}` : timeLabel;
     await sendPushToUser(event.userId, { title: event.title, body, url: "/" });
+    if (event.user.telegramChatId) {
+      const lines = [`⏰ ${event.title}`, timeLabel];
+      if (event.location) lines.push(`📍 ${event.location}`);
+      if (event.description) lines.push(event.description);
+      await sendTelegramMessage(event.user.telegramChatId, lines.join("\n"));
+    }
     await prisma.event.update({ where: { id: event.id }, data: { reminderSentAt: nowUtc.toJSDate() } });
     sent++;
   }

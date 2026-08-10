@@ -213,3 +213,37 @@ workflow, hitting `https://your-app.vercel.app/api/cron/reminders` with
 header `Authorization: Bearer YOUR_CRON_SECRET`. It's idempotent — each
 user gets at most one morning and one evening reminder per day no matter
 how often it's polled.
+
+## 9. Telegram agenda + reminders (optional)
+
+Besides push, you can get your daily agenda and per-event reminders sent to
+Telegram — useful since it works even on devices where push notifications
+are flaky, and message text can include full event details.
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`,
+   and follow the prompts. You'll get a token and a `@username` for your bot.
+2. Add to Vercel: `TELEGRAM_BOT_TOKEN` (the token from BotFather),
+   `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (the username, no `@`), and
+   `TELEGRAM_WEBHOOK_SECRET` (generate with `openssl rand -hex 16`).
+   Redeploy afterward.
+3. While logged in, visit `https://your-app.vercel.app/api/telegram/setup`
+   once to register the webhook — it should respond `{"ok":true,...}`.
+4. In the app, go to profile menu → **Notifications** → **Telegram** →
+   **Link Telegram**, then tap the button to open Telegram and hit **Start**.
+5. Turn on **Today's agenda** / **Tomorrow's agenda** and set the times —
+   same 15–30 min external-poller requirement as push reminders above, since
+   this also runs through `/api/cron/reminders`.
+
+Per-event reminders (set from the event editor, independent of two-way
+sync — see below) go out over Telegram the same way, including the event's
+location and description if you filled them in.
+
+## 10. Two-way sync toggle
+
+By default, editing or deleting a Google/Outlook/iCloud-sourced event in
+this app writes the change back to that provider too. If you'd rather this
+app be read-only towards your external calendars — pulling in their changes
+but never pushing anything back — turn off **Two-way sync** on the
+**Connections** settings page. Native (app-only) events are unaffected
+either way, and per-event reminders always work regardless of this setting
+since they're stored locally and never sent to any provider.
