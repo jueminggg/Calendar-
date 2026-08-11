@@ -34,7 +34,7 @@ export default function AppleConnectModal({ onClose, onConnected }: { onClose: (
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-lg bg-white dark:bg-gray-900 shadow-xl p-5 space-y-4"
+        className="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-lg bg-white dark:bg-gray-900 shadow-xl p-5 space-y-4"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Connect iCloud</h2>

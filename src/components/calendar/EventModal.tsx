@@ -229,7 +229,7 @@ export default function EventModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-30 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-lg bg-white dark:bg-gray-900 shadow-xl p-5 space-y-4"
+        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg bg-white dark:bg-gray-900 shadow-xl p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
