@@ -11,22 +11,38 @@ type TelegramUpdate = {
 };
 
 const IDEAS_LIST_LIMIT = 15;
+// How much of an idea's id to show/accept as its short reference for /done.
+const REF_LENGTH = 6;
 
 async function listIdeas(chatId: string, userId: string, tz: string) {
   const ideas = await prisma.idea.findMany({
-    where: { userId },
+    where: { userId, done: false },
     orderBy: { createdAt: "desc" },
     take: IDEAS_LIST_LIMIT,
   });
   if (ideas.length === 0) {
-    await sendTelegramMessage(chatId, "No ideas saved yet — just send me a message any time and I'll save it.");
+    await sendTelegramMessage(chatId, "No open ideas — just send me a message any time and I'll save it.");
     return;
   }
   const lines = ideas.map((idea) => {
     const when = DateTime.fromJSDate(idea.createdAt).setZone(tz).toLocaleString(DateTime.DATE_MED);
-    return `• ${idea.content} (${when})`;
+    const ref = idea.id.slice(-REF_LENGTH);
+    return `• ${idea.content} (${when})\n  done? send /done ${ref}`;
   });
   await sendTelegramMessage(chatId, `💡 Your last ${ideas.length} idea${ideas.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
+}
+
+async function markIdeaDone(chatId: string, userId: string, ref: string) {
+  const idea = await prisma.idea.findFirst({
+    where: { userId, done: false, id: { endsWith: ref.toLowerCase() } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!idea) {
+    await sendTelegramMessage(chatId, `Couldn't find an open idea ending in "${ref}". Send /ideas to see current ones and their refs.`);
+    return;
+  }
+  await prisma.idea.update({ where: { id: idea.id }, data: { done: true } });
+  await sendTelegramMessage(chatId, `✅ Marked done: ${idea.content}`);
 }
 
 /**
@@ -75,7 +91,7 @@ export async function POST(request: NextRequest) {
     });
     await sendTelegramMessage(
       chatIdStr,
-      "Linked! I'll send your daily agenda and event reminders here. Send me any message to jot down an idea, or /ideas to see recent ones.",
+      "Linked! I'll send your daily agenda and event reminders here. Send me any message to jot down an idea, /ideas to see open ones, or /done <ref> once you've acted on one.",
     );
     return NextResponse.json({ ok: true });
   }
@@ -94,12 +110,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  const doneMatch = text.match(/^\/done(?:@\S+)?\s+(\S+)/i);
+  if (doneMatch) {
+    await markIdeaDone(chatIdStr, linkedUser.id, doneMatch[1]);
+    return NextResponse.json({ ok: true });
+  }
+
   if (text.startsWith("/")) {
-    await sendTelegramMessage(chatIdStr, "Unknown command. Try /ideas, or just send a message to save it as an idea.");
+    await sendTelegramMessage(chatIdStr, "Unknown command. Try /ideas or /done <ref>, or just send a message to save it as an idea.");
     return NextResponse.json({ ok: true });
   }
 
   await prisma.idea.create({ data: { userId: linkedUser.id, content: text } });
-  await sendTelegramMessage(chatIdStr, "💡 Saved. Send /ideas any time to see your recent ones.");
+  await sendTelegramMessage(chatIdStr, "💡 Saved. Send /ideas any time to see your open ones.");
   return NextResponse.json({ ok: true });
 }

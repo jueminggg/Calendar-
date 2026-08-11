@@ -96,6 +96,7 @@ model Idea {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   String   @db.Text
+  done      Boolean  @default(false)
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
