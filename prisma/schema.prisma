@@ -84,7 +84,21 @@ model User {
   events            Event[]
   notifications     Notification[]
   tasks             Task[]
+  ideas             Idea[]
   pushSubscriptions PushSubscription[]
+}
+
+/// A quick note captured by messaging the Telegram bot (any message that
+/// isn't a recognized command) — for jotting down social media/content
+/// ideas on the go. Listed back via the /ideas Telegram command.
+model Idea {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 /// One browser/device's Web Push subscription, so a user can have several
