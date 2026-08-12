@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/push";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { eventSourceTag } from "@/lib/event-colors";
 
 /**
  * True once local time has reached (or just passed) the target HH:MM, within
@@ -30,19 +31,20 @@ async function fetchAgendaEvents(userId: string, rangeStart: DateTime, rangeEnd:
       endAt: { gt: rangeStart.toJSDate() },
     },
     orderBy: { startAt: "asc" },
-    select: { title: true, startAt: true, allDay: true, location: true },
+    select: { title: true, startAt: true, allDay: true, location: true, source: true, importedVia: true },
   });
 }
 
 function formatAgenda(
   label: string,
-  events: { title: string; startAt: Date; allDay: boolean; location: string | null }[],
+  events: { title: string; startAt: Date; allDay: boolean; location: string | null; source: string; importedVia: string | null }[],
   tz: string,
 ): string {
   if (events.length === 0) return `${label}\nNothing on your calendar.`;
   const lines = events.map((e) => {
     const time = e.allDay ? "All day" : DateTime.fromJSDate(e.startAt).setZone(tz).toLocaleString(DateTime.TIME_SIMPLE);
-    return e.location ? `• ${time} — ${e.title} (${e.location})` : `• ${time} — ${e.title}`;
+    const tag = `(${eventSourceTag(e)})`;
+    return e.location ? `• ${time} — ${e.title} (${e.location}) ${tag}` : `• ${time} — ${e.title} ${tag}`;
   });
   return `${label}\n${lines.join("\n")}`;
 }
@@ -146,6 +148,8 @@ export async function GET(request: NextRequest) {
       location: true,
       startAt: true,
       reminderMinutesBefore: true,
+      source: true,
+      importedVia: true,
       user: { select: { timezone: true, telegramChatId: true } },
     },
   });
@@ -158,7 +162,7 @@ export async function GET(request: NextRequest) {
     const body = event.location ? `${timeLabel} · ${event.location}` : timeLabel;
     await sendPushToUser(event.userId, { title: event.title, body, url: "/" });
     if (event.user.telegramChatId) {
-      const lines = [`⏰ ${event.title}`, timeLabel];
+      const lines = [`⏰ ${event.title} (${eventSourceTag(event)})`, timeLabel];
       if (event.location) lines.push(`📍 ${event.location}`);
       if (event.description) lines.push(event.description);
       await sendTelegramMessage(event.user.telegramChatId, lines.join("\n"));
