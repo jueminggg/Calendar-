@@ -238,6 +238,22 @@ Per-event reminders (set from the event editor, independent of two-way
 sync — see below) go out over Telegram the same way, including the event's
 location and description if you filled them in.
 
+Once linked, you can also just message the bot naturally instead of using
+the app:
+- **"lunch with sarah tomorrow 1pm"** — creates the event, tagged
+  `(Telegram)` like other event sources. If it clashes with something
+  already on your calendar, the bot lists the conflict and asks via
+  tappable buttons whether to create it anyway or cancel.
+- **"am I free tomorrow at 3pm?"** — replies with a free/busy check.
+- Anything else gets saved as an idea (see `/ideas` / `/done` above).
+
+This uses a free local parser (no AI/API calls, so no added cost) — it
+handles common phrasing well but is less flexible than a full assistant
+with unusual wording. If you re-run step 3 after an update to this
+feature, do it again — Telegram needs `allowed_updates` to include
+`callback_query` for the buttons to work, which `/api/telegram/setup`
+handles automatically each time you visit it.
+
 ## 10. Two-way sync toggle
 
 By default, editing or deleting a Google/Outlook/iCloud-sourced event in
