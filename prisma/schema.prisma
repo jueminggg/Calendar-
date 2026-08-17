@@ -85,7 +85,24 @@ model User {
   notifications     Notification[]
   tasks             Task[]
   ideas             Idea[]
+  telegramDrafts    TelegramDraft[]
   pushSubscriptions PushSubscription[]
+}
+
+/// A pending "confirm or cancel" action created by the Telegram bot's
+/// natural-language event flow when a scheduling clash is found. The
+/// inline buttons' callback_data references this row's id — Telegram
+/// limits callback_data to 64 bytes, too small to hold the event payload.
+model TelegramDraft {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // "create_event" for now
+  payload   Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
 }
 
 /// A quick note captured by messaging the Telegram bot (any message that
