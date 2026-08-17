@@ -19,10 +19,12 @@ const SHORT_SOURCE_LABELS: Record<string, string> = {
   APPLE: "iCloud",
 };
 
-/** e.g. "iCloud", "Google", "SS" (screenshot import), or "Manual" for a typed-in native event. */
+/** e.g. "iCloud", "Google", "SS" (screenshot import), "Telegram", or "Manual" for a typed-in native event. */
 export function eventSourceTag(event: { source: string; importedVia?: string | null }): string {
   if (event.source === "NATIVE") {
-    return event.importedVia === "screenshot" ? "SS" : "Manual";
+    if (event.importedVia === "screenshot") return "SS";
+    if (event.importedVia === "telegram") return "Telegram";
+    return "Manual";
   }
   return SHORT_SOURCE_LABELS[event.source] ?? event.source;
 }
@@ -30,7 +32,9 @@ export function eventSourceTag(event: { source: string; importedVia?: string | n
 /** Full-length version of eventSourceTag, for tooltips/detail views. */
 export function eventSourceFullLabel(event: { source: string; importedVia?: string | null }): string {
   if (event.source === "NATIVE") {
-    return event.importedVia === "screenshot" ? "Added from a screenshot" : "Manually added";
+    if (event.importedVia === "screenshot") return "Added from a screenshot";
+    if (event.importedVia === "telegram") return "Added via Telegram";
+    return "Manually added";
   }
   return SOURCE_LABELS[event.source] ?? event.source;
 }
