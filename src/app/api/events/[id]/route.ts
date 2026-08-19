@@ -29,6 +29,52 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/events
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
   const data = parsed.data;
+  const scope = request.nextUrl.searchParams.get("scope");
+
+  // Whole-series edit is only offered for native recurring events, same
+  // reasoning as the whole-series delete below: they're materialized as one
+  // row per occurrence in our own DB, so this actually sticks.
+  if (scope === "series" && event.source === "NATIVE" && event.recurringEventId) {
+    const seriesEvents = await prisma.event.findMany({ where: { userId: session.userId, recurringEventId: event.recurringEventId } });
+
+    // Title/description/location/allDay apply verbatim to every occurrence.
+    // Start/end apply as a time-of-day + duration shift, so each occurrence
+    // keeps its own date instead of collapsing onto the edited one's date.
+    let timeOfDayMs: number | null = null;
+    let durationMs: number | null = null;
+    if (data.startAt) {
+      const newStart = new Date(data.startAt);
+      const dayStart = new Date(newStart);
+      dayStart.setHours(0, 0, 0, 0);
+      timeOfDayMs = newStart.getTime() - dayStart.getTime();
+      if (data.endAt) durationMs = new Date(data.endAt).getTime() - newStart.getTime();
+    }
+
+    await prisma.$transaction(
+      seriesEvents.map((occ) => {
+        let startAt = occ.startAt;
+        let endAt = occ.endAt;
+        if (timeOfDayMs !== null) {
+          const dayStart = new Date(occ.startAt);
+          dayStart.setHours(0, 0, 0, 0);
+          startAt = new Date(dayStart.getTime() + timeOfDayMs);
+          endAt = new Date(startAt.getTime() + (durationMs ?? occ.endAt.getTime() - occ.startAt.getTime()));
+        }
+        return prisma.event.update({
+          where: { id: occ.id },
+          data: {
+            title: data.title,
+            description: data.description,
+            location: data.location,
+            allDay: data.allDay,
+            startAt,
+            endAt,
+          },
+        });
+      }),
+    );
+    return NextResponse.json({ ok: true, count: seriesEvents.length });
+  }
 
   if (event.source === "NATIVE") {
     const updated = await prisma.event.update({

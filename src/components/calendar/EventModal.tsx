@@ -153,7 +153,7 @@ export default function EventModal({
     }
   }
 
-  async function handleSave() {
+  async function handleSave(scope?: "series") {
     setError(null);
     if (!title.trim()) {
       setError("Title is required");
@@ -163,6 +163,7 @@ export default function EventModal({
       setError("Choose at least one calendar to add this to");
       return;
     }
+    if (scope === "series" && !window.confirm("Apply this change to every event in the series?")) return;
     setSaving(true);
     try {
       const payload = {
@@ -189,7 +190,8 @@ export default function EventModal({
                 : {}),
             }),
       };
-      const res = await fetch(existing ? `/api/events/${existing.id}` : "/api/events", {
+      const url = existing ? `/api/events/${existing.id}${scope === "series" ? "?scope=series" : ""}` : "/api/events";
+      const res = await fetch(url, {
         method: existing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -457,7 +459,7 @@ export default function EventModal({
           )}
         </div>
 
-        <div className="flex justify-between pt-2">
+        <div className="flex flex-wrap justify-between gap-2 pt-2">
           {existing ? (
             <div className="flex gap-3">
               <button
@@ -481,13 +483,24 @@ export default function EventModal({
             <span />
           )}
           {!isReadOnly && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
+            <div className="flex gap-2">
+              {existing && existing.source === "NATIVE" && existing.recurringEventId && (
+                <button
+                  onClick={() => handleSave("series")}
+                  disabled={saving}
+                  className="rounded-md border border-pink-600 text-pink-600 dark:text-pink-400 dark:border-pink-400 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+                >
+                  Save all in series
+                </button>
+              )}
+              <button
+                onClick={() => handleSave()}
+                disabled={saving}
+                className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+              >
+                {saving ? "Saving…" : existing?.recurringEventId ? "Save (this event)" : "Save"}
+              </button>
+            </div>
           )}
         </div>
       </div>
