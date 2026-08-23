@@ -41,6 +41,12 @@ enum EventStatus {
   CANCELLED
 }
 
+enum Priority {
+  LOW
+  MED
+  HIGH
+}
+
 enum NotificationType {
   INVITE
   UPDATE
@@ -146,6 +152,14 @@ model Task {
   endAt     DateTime?
   done      Boolean   @default(false)
   order     Int       @default(0)
+
+  // Used by "Plan my day" to estimate/prioritize backlog tasks when slotting
+  // them into free time between calendar events.
+  estimatedMinutes Int?
+  deadline         DateTime?
+  priority         Priority  @default(MED)
+  location         String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

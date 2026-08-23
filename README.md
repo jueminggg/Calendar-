@@ -263,3 +263,20 @@ but never pushing anything back — turn off **Two-way sync** on the
 **Connections** settings page. Native (app-only) events are unaffected
 either way, and per-event reminders always work regardless of this setting
 since they're stored locally and never sent to any provider.
+
+## 11. Plan my day (optional travel-time buffers)
+
+On the **To-do** page, adding a task lets you set an estimate (minutes),
+a deadline, a priority, and a location — none required. Hit **Plan my day**
+and it slots your un-timed to-dos for that day into the actual free gaps
+between your calendar events (7am–10pm by default), picking the earliest-
+deadline, then highest-priority, then best-fitting task for each gap. Tasks
+that don't fit anywhere stay untimed and are called out rather than silently
+dropped. Re-running it only touches tasks that are still untimed — anything
+already scheduled (by this or manually) is left alone.
+
+If two adjacent events have different, non-empty locations, it reserves a
+travel-time buffer before the second one using Google's Distance Matrix API
+(transit mode). This needs its own `GOOGLE_MAPS_API_KEY` — see
+`.env.example` for where to get one. Without it, planning still works, it
+just doesn't buffer for travel time.

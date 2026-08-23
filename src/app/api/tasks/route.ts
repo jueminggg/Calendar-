@@ -26,6 +26,10 @@ const createSchema = z.object({
   date: z.string(),
   startAt: z.string().optional(),
   endAt: z.string().optional(),
+  estimatedMinutes: z.number().int().min(1).max(1440).nullable().optional(),
+  deadline: z.string().nullable().optional(),
+  priority: z.enum(["LOW", "MED", "HIGH"]).optional(),
+  location: z.string().nullable().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -54,6 +58,10 @@ export async function POST(request: NextRequest) {
       startAt: data.startAt ? new Date(data.startAt) : null,
       endAt: data.endAt ? new Date(data.endAt) : null,
       order: (maxOrder._max.order ?? 0) + 1,
+      estimatedMinutes: data.estimatedMinutes,
+      deadline: data.deadline ? new Date(data.deadline) : undefined,
+      priority: data.priority,
+      location: data.location,
     },
   });
 

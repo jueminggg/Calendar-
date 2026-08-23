@@ -10,6 +10,10 @@ const updateSchema = z.object({
   endAt: z.string().nullable().optional(),
   done: z.boolean().optional(),
   order: z.number().int().optional(),
+  estimatedMinutes: z.number().int().min(1).max(1440).nullable().optional(),
+  deadline: z.string().nullable().optional(),
+  priority: z.enum(["LOW", "MED", "HIGH"]).optional(),
+  location: z.string().nullable().optional(),
 });
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/tasks/[id]">) {
@@ -38,6 +42,10 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/tasks/
       endAt: data.endAt === undefined ? undefined : data.endAt ? new Date(data.endAt) : null,
       done: data.done,
       order: data.order,
+      estimatedMinutes: data.estimatedMinutes,
+      deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
+      priority: data.priority,
+      location: data.location,
     },
   });
 
