@@ -1,16 +1,31 @@
 // Pure, synchronous scheduling logic for "Plan my day" — kept free of I/O
-// (DB, HTTP) so it's easy to reason about and test; the API route wires this
-// together with Prisma and the Distance Matrix lookup in travelTime.ts.
+// (DB, HTTP) so it's easy to reason about and test; src/lib/runPlanDay.ts
+// wires this together with Prisma and the Distance Matrix lookup in
+// travelTime.ts.
 
 export const DEFAULT_TASK_MINUTES = 30;
 export const DEFAULT_DAY_START_HOUR = 7;
 export const DEFAULT_DAY_END_HOUR = 22;
 
+// Location tags (case-insensitive) that mean "this task can only be done
+// while actually traveling" — they're matched against the travel-time
+// buffers carved out between differently-located events, not against a
+// fixed place.
+const TRAVEL_LOCATION_ALIASES = new Set(["traveling", "travelling", "travel", "commute", "commuting", "on the go", "in transit"]);
+
+export function isTravelTag(location: string | null): boolean {
+  return location !== null && TRAVEL_LOCATION_ALIASES.has(location.trim().toLowerCase());
+}
+
 export type FixedBlock = { startAt: Date; endAt: Date; location: string | null };
 export type FreeWindow = { startAt: Date; endAt: Date };
 export type RawWindow = FreeWindow & { beforeLocation: string | null; afterLocation: string | null };
+/** A free window tagged with the place it's associated with — a real
+ * location (you're still near where the last event was), "Traveling" (this
+ * slice is a travel-time buffer), or null (no particular place). */
+export type LocatedWindow = FreeWindow & { locationTag: string | null };
 export type PlanPriority = "LOW" | "MED" | "HIGH";
-export type PlanTask = { id: string; estimatedMinutes: number | null; deadline: Date | null; priority: PlanPriority };
+export type PlanTask = { id: string; estimatedMinutes: number | null; deadline: Date | null; priority: PlanPriority; location: string | null };
 export type Placement = { taskId: string; startAt: Date; endAt: Date };
 
 const PRIORITY_RANK: Record<PlanPriority, number> = { HIGH: 0, MED: 1, LOW: 2 };
@@ -65,27 +80,57 @@ export function computeRawWindows(dayStart: Date, dayEnd: Date, blocks: FixedBlo
 }
 
 /**
- * Reserves a travel-time buffer at the end of a window (right before the
- * next fixed block), on the reasoning that you stay put until you need to
- * leave to make it to wherever's next. Returns null if the buffer consumes
- * the entire window.
+ * Splits a raw window into up to two located windows: the bulk of it
+ * (tagged with whichever location you're still near — the "before" one, if
+ * any), plus — when the block before and after have different non-empty
+ * locations — a "Traveling" window reserved at the end, sized to the travel
+ * buffer, so travel-appropriate tasks can actually use that time instead of
+ * it just being dead space. With no buffer needed, returns the window as-is
+ * with whichever single location applies (if any).
  */
-export function applyTravelBuffer(window: FreeWindow, bufferMinutes: number): FreeWindow | null {
-  if (bufferMinutes <= 0) return window;
-  const endAt = new Date(window.endAt.getTime() - bufferMinutes * 60_000);
-  if (endAt.getTime() <= window.startAt.getTime()) return null;
-  return { startAt: window.startAt, endAt };
+export function splitForTravel(window: RawWindow, travelBufferMinutes: number): LocatedWindow[] {
+  const before = window.beforeLocation?.trim() || null;
+  const after = window.afterLocation?.trim() || null;
+  const sameLocation = before && after && before.toLowerCase() === after.toLowerCase();
+  const needsTravel = before && after && !sameLocation && travelBufferMinutes > 0;
+
+  if (!needsTravel) {
+    return [{ startAt: window.startAt, endAt: window.endAt, locationTag: sameLocation ? before : (before ?? after) }];
+  }
+
+  const travelStart = new Date(Math.max(window.endAt.getTime() - travelBufferMinutes * 60_000, window.startAt.getTime()));
+  const result: LocatedWindow[] = [];
+  if (travelStart.getTime() > window.startAt.getTime()) {
+    result.push({ startAt: window.startAt, endAt: travelStart, locationTag: before });
+  }
+  result.push({ startAt: travelStart, endAt: window.endAt, locationTag: "Traveling" });
+  return result;
+}
+
+/** Whether a task with this location tag is allowed (not just preferred) to run in a window with this tag. */
+function locationFits(taskLocation: string | null, windowTag: string | null): boolean {
+  const windowIsTravel = isTravelTag(windowTag);
+  if (isTravelTag(taskLocation)) return windowIsTravel; // travel-tagged tasks ONLY fit travel windows
+  if (windowIsTravel) return taskLocation === null; // travel windows take travel-tagged or untagged tasks, not place-tagged ones
+  return true; // regular windows accept anything; place-matching is a soft preference below, not a requirement
+}
+
+function locationMatches(taskLocation: string | null, windowTag: string | null): boolean {
+  if (!taskLocation || !windowTag) return false;
+  return taskLocation.trim().toLowerCase() === windowTag.trim().toLowerCase();
 }
 
 /**
  * Greedily slots tasks into free windows, processed chronologically. Within
  * each window, repeatedly picks the best-fitting eligible task — ranked by
- * (1) earliest deadline (nulls last), (2) higher priority, (3) the duration
- * that best fills the remaining space — until nothing left in the queue
- * fits, then moves to the next window. A task too big for every window
- * simply never gets picked and ends up in unplacedIds.
+ * (1) earliest deadline (nulls last), (2) higher priority, (3) whether its
+ * location tag matches this window's, (4) the duration that best fills the
+ * remaining space — until nothing left in the queue is both eligible and
+ * fits, then moves to the next window. A task too big (or too
+ * place-specific) for every window simply never gets picked and ends up in
+ * unplacedIds.
  */
-export function assignTasks(windows: FreeWindow[], tasks: PlanTask[]): { placements: Placement[]; unplacedIds: string[] } {
+export function assignTasks(windows: LocatedWindow[], tasks: PlanTask[]): { placements: Placement[]; unplacedIds: string[] } {
   const queue = [...tasks];
   const placements: Placement[] = [];
   const orderedWindows = [...windows].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
@@ -101,6 +146,7 @@ export function assignTasks(windows: FreeWindow[], tasks: PlanTask[]): { placeme
         const candidate = queue[i];
         const duration = candidate.estimatedMinutes ?? DEFAULT_TASK_MINUTES;
         if (duration > remainingMinutes) continue;
+        if (!locationFits(candidate.location, window.locationTag)) continue;
 
         if (bestIndex === -1) {
           bestIndex = i;
@@ -120,10 +166,16 @@ export function assignTasks(windows: FreeWindow[], tasks: PlanTask[]): { placeme
           if (candidateRank < bestRank) bestIndex = i;
           continue;
         }
+        const candidateMatches = locationMatches(candidate.location, window.locationTag);
+        const bestMatches = locationMatches(best.location, window.locationTag);
+        if (candidateMatches !== bestMatches) {
+          if (candidateMatches) bestIndex = i;
+          continue;
+        }
         if (duration > bestDuration) bestIndex = i; // best-fit: use up more of the remaining space
       }
 
-      if (bestIndex === -1) break; // nothing left in the queue fits this window
+      if (bestIndex === -1) break; // nothing left in the queue is eligible for this window
 
       const [task] = queue.splice(bestIndex, 1);
       const duration = task.estimatedMinutes ?? DEFAULT_TASK_MINUTES;

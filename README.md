@@ -280,3 +280,30 @@ travel-time buffer before the second one using Google's Distance Matrix API
 (transit mode). This needs its own `GOOGLE_MAPS_API_KEY` — see
 `.env.example` for where to get one. Without it, planning still works, it
 just doesn't buffer for travel time.
+
+A to-do's **location** can also be a real place (e.g. "Office") to *prefer*
+scheduling it near a same-located event — it's a soft preference, not a
+requirement, so it still gets slotted elsewhere if nothing matches. The one
+exception is **"Traveling"** (or "commute"/"in transit"): those to-dos only
+ever go into the travel-time buffers above, since a buffer is otherwise
+just reserved dead time — this lets you fill it with something you can
+actually do on the move.
+
+### Via Telegram
+
+If you've linked Telegram (see below), you don't need the app for any of
+this:
+- **"need to call the bank while traveling"**, **"remember to draft the
+  proposal, office, by 5pm"**, or `/task <text>` — adds a to-do (extracting
+  a location tag and/or deadline where mentioned) and immediately re-runs
+  today's plan, replying with where it landed. If your day is already full,
+  it tells you what didn't fit and gives each a short reference — reply
+  `/postpone <ref>` to bump it to tomorrow instead of it just sitting there
+  unscheduled.
+- **"what should I do now?"** / **"what should I do at 3pm?"** — checks
+  your actual calendar events first, then already-scheduled to-dos, and
+  falls back to suggesting the next backlog item if that moment is free.
+
+The to-do vs. idea distinction still holds (see below) — phrases like "need
+to", "have to", "remember to", or an explicit "todo:" mark something as a
+to-do; anything else without a date/time still gets saved as a plain idea.

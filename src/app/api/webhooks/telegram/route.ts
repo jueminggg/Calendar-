@@ -2,8 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
 import { sendTelegramMessage, sendTelegramMessageWithButtons, answerCallbackQuery } from "@/lib/telegram";
-import { parseMessageIntent, type EventIntent, type AvailabilityIntent } from "@/lib/telegram-intent";
+import {
+  parseMessageIntent,
+  parseTaskIntent,
+  parseWhatNextIntent,
+  type EventIntent,
+  type AvailabilityIntent,
+  type TaskIntent,
+} from "@/lib/telegram-intent";
 import { eventSourceTag } from "@/lib/event-colors";
+import { runPlanDay } from "@/lib/runPlanDay";
+import type { Task } from "@prisma/client";
 
 type TelegramUpdate = {
   message?: {
@@ -18,11 +27,15 @@ type TelegramUpdate = {
 };
 
 const IDEAS_LIST_LIMIT = 15;
-// How much of an idea's id to show/accept as its short reference for /done.
+// How much of an id to show/accept as a short reference for /done and /postpone.
 const REF_LENGTH = 6;
 const DRAFT_TTL_MINUTES = 15;
 
 type LinkedUser = { id: string; timezone: string };
+
+function dateOnly(dt: DateTime): string {
+  return dt.toFormat("yyyy-MM-dd");
+}
 
 async function listIdeas(chatId: string, userId: string, tz: string) {
   const ideas = await prisma.idea.findMany({
@@ -90,6 +103,11 @@ function formatWhen(startAt: Date, endAt: Date, allDay: boolean, tz: string): st
   return `${start.toLocaleString(DateTime.DATETIME_MED)} – ${end.toLocaleString(DateTime.TIME_SIMPLE)}`;
 }
 
+function formatUnplaced(tasks: Task[]): string {
+  const lines = tasks.map((t) => `• ${t.title} — /postpone ${t.id.slice(-REF_LENGTH)}`);
+  return `Didn't fit today:\n${lines.join("\n")}`;
+}
+
 async function handleCreateEventIntent(chatId: string, user: LinkedUser, intent: EventIntent) {
   const startAt = new Date(intent.startAt);
   const endAt = new Date(intent.endAt);
@@ -155,6 +173,102 @@ async function handleAvailabilityIntent(chatId: string, user: LinkedUser, intent
     return;
   }
   await sendTelegramMessage(chatId, `❌ Not free ${when} — you have:\n${formatClashes(clashes, tz)}`);
+}
+
+async function handleAddTaskIntent(chatId: string, user: LinkedUser, intent: TaskIntent) {
+  const tz = user.timezone || "UTC";
+  const today = DateTime.now().setZone(tz).startOf("day");
+  const dateStr = dateOnly(today);
+
+  const task = await prisma.task.create({
+    data: {
+      userId: user.id,
+      title: intent.title,
+      date: today.toJSDate(),
+      deadline: intent.deadline ? new Date(intent.deadline) : undefined,
+      priority: intent.priority,
+      location: intent.location,
+    },
+  });
+
+  let result;
+  try {
+    result = await runPlanDay(user.id, tz, dateStr);
+  } catch (err) {
+    console.error("Auto-replan after Telegram task add failed", err);
+    await sendTelegramMessage(chatId, `📝 Added "${task.title}" to today's backlog (couldn't auto-schedule it right now).`);
+    return;
+  }
+
+  const placed = result.scheduled.find((t) => t.id === task.id);
+  const lines: string[] = [];
+  if (placed) {
+    lines.push(`📝 Added and scheduled: ${placed.title}\n${formatWhen(placed.startAt!, placed.endAt!, false, tz)}`);
+  } else {
+    lines.push(`📝 Added "${task.title}" — didn't fit today's schedule right now.`);
+  }
+  if (result.unplaced.length > 0) {
+    lines.push(formatUnplaced(result.unplaced));
+  }
+  await sendTelegramMessage(chatId, lines.join("\n\n"));
+}
+
+async function handlePostpone(chatId: string, userId: string, ref: string) {
+  const task = await prisma.task.findFirst({
+    where: { userId, done: false, id: { endsWith: ref.toLowerCase() } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!task) {
+    await sendTelegramMessage(chatId, `Couldn't find an open to-do ending in "${ref}".`);
+    return;
+  }
+  const nextDay = DateTime.fromJSDate(task.date, { zone: "utc" }).plus({ days: 1 }).toJSDate();
+  await prisma.task.update({ where: { id: task.id }, data: { date: nextDay, startAt: null, endAt: null } });
+  await sendTelegramMessage(chatId, `↪️ Postponed to tomorrow: ${task.title}`);
+}
+
+async function handleWhatNext(chatId: string, user: LinkedUser, atISO: string) {
+  const at = new Date(atISO);
+  const tz = user.timezone || "UTC";
+
+  const event = await prisma.event.findFirst({
+    where: { userId: user.id, status: { not: "CANCELLED" }, startAt: { lte: at }, endAt: { gt: at } },
+    orderBy: { startAt: "asc" },
+  });
+  if (event) {
+    await sendTelegramMessage(
+      chatId,
+      `📅 ${event.title} (${formatWhen(event.startAt, event.endAt, event.allDay, tz)}) (${eventSourceTag(event)})`,
+    );
+    return;
+  }
+
+  const task = await prisma.task.findFirst({
+    where: { userId: user.id, done: false, startAt: { lte: at }, endAt: { gt: at } },
+    orderBy: { startAt: "asc" },
+  });
+  if (task) {
+    await sendTelegramMessage(chatId, `✅ ${task.title}${task.location ? ` (${task.location})` : ""}`);
+    return;
+  }
+
+  const today = DateTime.fromJSDate(at, { zone: tz }).startOf("day").toJSDate();
+  const backlog = await prisma.task.findMany({
+    where: { userId: user.id, date: today, startAt: null, done: false },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+  });
+  if (backlog.length === 0) {
+    await sendTelegramMessage(chatId, "Nothing scheduled then — you're free.");
+    return;
+  }
+  const priorityRank: Record<string, number> = { HIGH: 0, MED: 1, LOW: 2 };
+  const suggestion = [...backlog].sort((a, b) => {
+    const aDeadline = a.deadline ? a.deadline.getTime() : Infinity;
+    const bDeadline = b.deadline ? b.deadline.getTime() : Infinity;
+    if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+    return priorityRank[a.priority] - priorityRank[b.priority];
+  })[0];
+  await sendTelegramMessage(chatId, `Nothing scheduled then — free time. From your backlog, next up: ${suggestion.title}`);
 }
 
 async function handleCallbackQuery(callbackQuery: NonNullable<TelegramUpdate["callback_query"]>) {
@@ -264,7 +378,7 @@ export async function POST(request: NextRequest) {
     });
     await sendTelegramMessage(
       chatIdStr,
-      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, or anything else to jot it down as an idea. /ideas lists open ideas, /done <ref> marks one done.',
+      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, "need to call the bank while traveling" to add a to-do (auto-slotted into today), "what should I do now?" any time, or anything else to jot it down as an idea. /ideas, /done <ref>, /postpone <ref>.',
     );
     return NextResponse.json({ ok: true });
   }
@@ -289,12 +403,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (text.startsWith("/")) {
-    await sendTelegramMessage(chatIdStr, "Unknown command. Try /ideas or /done <ref>, or just send a message to save it as an idea, schedule an event, or check availability.");
+  const postponeMatch = text.match(/^\/postpone(?:@\S+)?\s+(\S+)/i);
+  if (postponeMatch) {
+    await handlePostpone(chatIdStr, linkedUser.id, postponeMatch[1]);
     return NextResponse.json({ ok: true });
   }
 
-  const intent = parseMessageIntent(text, { timezone: linkedUser.timezone || "UTC", now: new Date() });
+  const taskCommandMatch = text.match(/^\/task(?:@\S+)?\s+([\s\S]+)/i);
+  if (taskCommandMatch) {
+    const forced = parseTaskIntent(taskCommandMatch[1], { timezone: linkedUser.timezone || "UTC", now: new Date(), force: true });
+    if (forced) await handleAddTaskIntent(chatIdStr, linkedUser, forced);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (text.startsWith("/")) {
+    await sendTelegramMessage(
+      chatIdStr,
+      "Unknown command. Try /ideas, /done <ref>, /postpone <ref>, /task <text>, or just send a message.",
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  const tz = linkedUser.timezone || "UTC";
+  const now = new Date();
+
+  const whatNext = parseWhatNextIntent(text, { timezone: tz, now });
+  if (whatNext) {
+    await handleWhatNext(chatIdStr, linkedUser, whatNext.at);
+    return NextResponse.json({ ok: true });
+  }
+
+  const taskIntent = parseTaskIntent(text, { timezone: tz, now });
+  if (taskIntent) {
+    await handleAddTaskIntent(chatIdStr, linkedUser, taskIntent);
+    return NextResponse.json({ ok: true });
+  }
+
+  const intent = parseMessageIntent(text, { timezone: tz, now });
 
   if (intent.kind === "create_event") {
     await handleCreateEventIntent(chatIdStr, linkedUser, intent);
