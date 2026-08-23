@@ -23,7 +23,9 @@ export async function GET(request: NextRequest) {
 const createSchema = z.object({
   title: z.string().min(1),
   notes: z.string().optional(),
-  date: z.string(),
+  // Omit for a flexible goal/session (no fixed day yet, just a deadline) —
+  // see the Task.date comment in schema.prisma.
+  date: z.string().optional(),
   startAt: z.string().optional(),
   endAt: z.string().optional(),
   estimatedMinutes: z.number().int().min(1).max(1440).nullable().optional(),
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
   const data = parsed.data;
-  const date = new Date(data.date);
+  const date = data.date ? new Date(data.date) : null;
 
   const maxOrder = await prisma.task.aggregate({
     where: { userId: session.userId, date },

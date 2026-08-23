@@ -147,7 +147,12 @@ model Task {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   notes     String?
-  date      DateTime  // the day this to-do belongs to, stored as that day's midnight UTC
+  // The day this to-do belongs to, stored as that day's midnight UTC. Null
+  // means "flexible" — a goal/session with a deadline but no day assigned
+  // yet, eligible to be picked up by Plan my day (or a Telegram "what
+  // should I do" query) on whichever day has room before the deadline.
+  // Gets set the first time it's actually scheduled.
+  date      DateTime?
   startAt   DateTime?
   endAt     DateTime?
   done      Boolean   @default(false)

@@ -14,6 +14,25 @@ import {
 export type RunPlanDayResult = { scheduled: Task[]; unplaced: Task[] };
 
 /**
+ * A day's eligible backlog: still-untimed tasks actually dated to this day,
+ * plus "flexible" tasks (no day assigned, just a deadline — e.g. one
+ * session of a multi-session goal) that haven't been picked up by any day
+ * yet. Shared by runPlanDay and the Telegram "what fits in my N-minute
+ * break" query so both see the same pool.
+ */
+export async function fetchBacklogTasks(userId: string, dayStart: Date): Promise<Task[]> {
+  return prisma.task.findMany({
+    where: {
+      userId,
+      startAt: null,
+      done: false,
+      OR: [{ date: dayStart }, { date: null, deadline: { not: null } }],
+    },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+  });
+}
+
+/**
  * The actual "Plan my day" logic: fetch the day's fixed calendar blocks and
  * still-untimed backlog tasks, compute free (and travel-buffer) windows, and
  * greedily slot tasks into them. Shared between the HTTP route
@@ -57,11 +76,7 @@ export async function runPlanDay(
       where: { userId, date: dayStart, startAt: { not: null }, endAt: { not: null }, done: false },
       select: { startAt: true, endAt: true },
     }),
-    // Same-day backlog only, matching how Task.date already scopes things.
-    prisma.task.findMany({
-      where: { userId, date: dayStart, startAt: null, done: false },
-      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-    }),
+    fetchBacklogTasks(userId, dayStart),
   ]);
 
   const fixedBlocks = [
@@ -96,7 +111,9 @@ export async function runPlanDay(
   );
 
   const scheduled = await prisma.$transaction(
-    placements.map((p) => prisma.task.update({ where: { id: p.taskId }, data: { startAt: p.startAt, endAt: p.endAt } })),
+    // Setting date here too converts a flexible (date: null) task into a
+    // dated one, the first time it actually gets scheduled somewhere.
+    placements.map((p) => prisma.task.update({ where: { id: p.taskId }, data: { startAt: p.startAt, endAt: p.endAt, date: dayStart } })),
   );
 
   const unplaced = backlogTasks.filter((t) => unplacedIds.includes(t.id));

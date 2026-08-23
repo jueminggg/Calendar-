@@ -5,13 +5,16 @@ import { sendTelegramMessage, sendTelegramMessageWithButtons, answerCallbackQuer
 import {
   parseMessageIntent,
   parseTaskIntent,
+  parseGoalIntent,
   parseWhatNextIntent,
   type EventIntent,
   type AvailabilityIntent,
   type TaskIntent,
+  type GoalIntent,
 } from "@/lib/telegram-intent";
 import { eventSourceTag } from "@/lib/event-colors";
-import { runPlanDay } from "@/lib/runPlanDay";
+import { pickBestTask } from "@/lib/planDay";
+import { runPlanDay, fetchBacklogTasks } from "@/lib/runPlanDay";
 import type { Task } from "@prisma/client";
 
 type TelegramUpdate = {
@@ -188,6 +191,7 @@ async function handleAddTaskIntent(chatId: string, user: LinkedUser, intent: Tas
       deadline: intent.deadline ? new Date(intent.deadline) : undefined,
       priority: intent.priority,
       location: intent.location,
+      estimatedMinutes: intent.estimatedMinutes,
     },
   });
 
@@ -213,6 +217,61 @@ async function handleAddTaskIntent(chatId: string, user: LinkedUser, intent: Tas
   await sendTelegramMessage(chatId, lines.join("\n\n"));
 }
 
+async function handleAddGoalIntent(chatId: string, user: LinkedUser, intent: GoalIntent) {
+  const tz = user.timezone || "UTC";
+  const today = DateTime.now().setZone(tz).startOf("day");
+  const dateStr = dateOnly(today);
+  const deadline = intent.deadline ? new Date(intent.deadline) : undefined;
+
+  // Materialized as N independent flexible (date: null) sessions, same
+  // pattern as native recurring calendar events — each one gets picked up
+  // by whichever day's plan actually has room before the deadline, rather
+  // than all being dumped onto today.
+  const sessions = await prisma.$transaction(
+    Array.from({ length: intent.sessions }, (_, i) =>
+      prisma.task.create({
+        data: {
+          userId: user.id,
+          title: `${intent.title} (${i + 1}/${intent.sessions})`,
+          date: null,
+          deadline,
+          priority: intent.priority,
+          location: intent.location,
+          estimatedMinutes: intent.estimatedMinutes,
+        },
+      }),
+    ),
+  );
+
+  let result;
+  try {
+    result = await runPlanDay(user.id, tz, dateStr);
+  } catch (err) {
+    console.error("Auto-replan after Telegram goal add failed", err);
+    await sendTelegramMessage(
+      chatId,
+      `🎯 Added goal: ${intent.title} — ${intent.sessions} sessions × ${intent.estimatedMinutes} min${
+        intent.deadline ? `, due ${formatWhen(deadline!, deadline!, true, tz)}` : ""
+      }. Couldn't auto-schedule right now, but they're in your flexible backlog.`,
+    );
+    return;
+  }
+
+  const sessionIds = new Set(sessions.map((s) => s.id));
+  const placedToday = result.scheduled.filter((t) => sessionIds.has(t.id));
+  const lines = [
+    `🎯 Added goal: ${intent.title} — ${intent.sessions} sessions × ${intent.estimatedMinutes} min${
+      intent.deadline ? `, due ${formatWhen(deadline!, deadline!, true, tz)}` : ""
+    }.`,
+  ];
+  if (placedToday.length > 0) {
+    lines.push(`${placedToday.length} session${placedToday.length === 1 ? "" : "s"} scheduled today; the rest are flexible before the deadline.`);
+  } else {
+    lines.push("All sessions are flexible for now — I'll slot them in as your days have room.");
+  }
+  await sendTelegramMessage(chatId, lines.join("\n"));
+}
+
 async function handlePostpone(chatId: string, userId: string, ref: string) {
   const task = await prisma.task.findFirst({
     where: { userId, done: false, id: { endsWith: ref.toLowerCase() } },
@@ -222,12 +281,19 @@ async function handlePostpone(chatId: string, userId: string, ref: string) {
     await sendTelegramMessage(chatId, `Couldn't find an open to-do ending in "${ref}".`);
     return;
   }
+  if (!task.date) {
+    await sendTelegramMessage(
+      chatId,
+      `"${task.title}" is flexible (no fixed day yet) — it'll get picked up automatically before its deadline, no need to postpone it.`,
+    );
+    return;
+  }
   const nextDay = DateTime.fromJSDate(task.date, { zone: "utc" }).plus({ days: 1 }).toJSDate();
   await prisma.task.update({ where: { id: task.id }, data: { date: nextDay, startAt: null, endAt: null } });
   await sendTelegramMessage(chatId, `↪️ Postponed to tomorrow: ${task.title}`);
 }
 
-async function handleWhatNext(chatId: string, user: LinkedUser, atISO: string) {
+async function handleWhatNext(chatId: string, user: LinkedUser, atISO: string, durationMinutes: number | null) {
   const at = new Date(atISO);
   const tz = user.timezone || "UTC";
 
@@ -253,22 +319,32 @@ async function handleWhatNext(chatId: string, user: LinkedUser, atISO: string) {
   }
 
   const today = DateTime.fromJSDate(at, { zone: tz }).startOf("day").toJSDate();
-  const backlog = await prisma.task.findMany({
-    where: { userId: user.id, date: today, startAt: null, done: false },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-  });
+  const backlog = await fetchBacklogTasks(user.id, today);
   if (backlog.length === 0) {
     await sendTelegramMessage(chatId, "Nothing scheduled then — you're free.");
     return;
   }
-  const priorityRank: Record<string, number> = { HIGH: 0, MED: 1, LOW: 2 };
-  const suggestion = [...backlog].sort((a, b) => {
-    const aDeadline = a.deadline ? a.deadline.getTime() : Infinity;
-    const bDeadline = b.deadline ? b.deadline.getTime() : Infinity;
-    if (aDeadline !== bDeadline) return aDeadline - bDeadline;
-    return priorityRank[a.priority] - priorityRank[b.priority];
-  })[0];
-  await sendTelegramMessage(chatId, `Nothing scheduled then — free time. From your backlog, next up: ${suggestion.title}`);
+
+  // With a break length given ("I have a 15 min break"), only suggest
+  // something that actually fits, ranked the same way Plan my day would.
+  // Without one, still use the same ranking but with no duration cap, so
+  // it's just "the single most urgent thing" regardless of how long it takes.
+  const suggestion = pickBestTask(
+    backlog.map((t) => ({ id: t.id, estimatedMinutes: t.estimatedMinutes, deadline: t.deadline, priority: t.priority, location: t.location })),
+    durationMinutes ?? Infinity,
+  );
+
+  if (!suggestion) {
+    await sendTelegramMessage(
+      chatId,
+      durationMinutes !== null ? `Nothing in your backlog fits ${durationMinutes} min right now.` : "Nothing in your backlog fits right now.",
+    );
+    return;
+  }
+
+  const suggestedTask = backlog.find((t) => t.id === suggestion.id)!;
+  const durationLabel = suggestedTask.estimatedMinutes ? ` (${suggestedTask.estimatedMinutes} min)` : "";
+  await sendTelegramMessage(chatId, `Nothing scheduled then — free time. Next up: ${suggestedTask.title}${durationLabel}`);
 }
 
 async function handleCallbackQuery(callbackQuery: NonNullable<TelegramUpdate["callback_query"]>) {
@@ -378,7 +454,7 @@ export async function POST(request: NextRequest) {
     });
     await sendTelegramMessage(
       chatIdStr,
-      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, "need to call the bank while traveling" to add a to-do (auto-slotted into today), "what should I do now?" any time, or anything else to jot it down as an idea. /ideas, /done <ref>, /postpone <ref>.',
+      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, "need to call the bank while traveling" to add a to-do (auto-slotted in), "need to practice for the exam 4 times, 20 min each, by friday" to add a multi-session goal, "what should I do, I have a 15 min break?" any time, or anything else to jot down as an idea. /ideas, /done <ref>, /postpone <ref>.',
     );
     return NextResponse.json({ ok: true });
   }
@@ -411,8 +487,14 @@ export async function POST(request: NextRequest) {
 
   const taskCommandMatch = text.match(/^\/task(?:@\S+)?\s+([\s\S]+)/i);
   if (taskCommandMatch) {
-    const forced = parseTaskIntent(taskCommandMatch[1], { timezone: linkedUser.timezone || "UTC", now: new Date(), force: true });
-    if (forced) await handleAddTaskIntent(chatIdStr, linkedUser, forced);
+    const opts = { timezone: linkedUser.timezone || "UTC", now: new Date(), force: true };
+    const forcedGoal = parseGoalIntent(taskCommandMatch[1], opts);
+    if (forcedGoal) {
+      await handleAddGoalIntent(chatIdStr, linkedUser, forcedGoal);
+    } else {
+      const forcedTask = parseTaskIntent(taskCommandMatch[1], opts);
+      if (forcedTask) await handleAddTaskIntent(chatIdStr, linkedUser, forcedTask);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -429,7 +511,13 @@ export async function POST(request: NextRequest) {
 
   const whatNext = parseWhatNextIntent(text, { timezone: tz, now });
   if (whatNext) {
-    await handleWhatNext(chatIdStr, linkedUser, whatNext.at);
+    await handleWhatNext(chatIdStr, linkedUser, whatNext.at, whatNext.durationMinutes);
+    return NextResponse.json({ ok: true });
+  }
+
+  const goalIntent = parseGoalIntent(text, { timezone: tz, now });
+  if (goalIntent) {
+    await handleAddGoalIntent(chatIdStr, linkedUser, goalIntent);
     return NextResponse.json({ ok: true });
   }
 

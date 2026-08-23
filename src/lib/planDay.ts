@@ -121,12 +121,66 @@ function locationMatches(taskLocation: string | null, windowTag: string | null):
 }
 
 /**
+ * Index of the best eligible candidate for a window with this much time
+ * left — ranked by (1) earliest deadline (nulls last), (2) higher priority,
+ * (3) whether its location tag matches the window's, (4) the duration that
+ * best fills the remaining space. Returns -1 if nothing in the list both
+ * fits the remaining time and is location-eligible for this window.
+ */
+function pickBestCandidateIndex<T extends PlanTask>(candidates: T[], remainingMinutes: number, windowTag: string | null): number {
+  let bestIndex = -1;
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const duration = candidate.estimatedMinutes ?? DEFAULT_TASK_MINUTES;
+    if (duration > remainingMinutes) continue;
+    if (!locationFits(candidate.location, windowTag)) continue;
+
+    if (bestIndex === -1) {
+      bestIndex = i;
+      continue;
+    }
+    const best = candidates[bestIndex];
+    const bestDuration = best.estimatedMinutes ?? DEFAULT_TASK_MINUTES;
+    const candidateDeadline = candidate.deadline ? candidate.deadline.getTime() : Infinity;
+    const bestDeadline = best.deadline ? best.deadline.getTime() : Infinity;
+    if (candidateDeadline !== bestDeadline) {
+      if (candidateDeadline < bestDeadline) bestIndex = i;
+      continue;
+    }
+    const candidateRank = PRIORITY_RANK[candidate.priority];
+    const bestRank = PRIORITY_RANK[best.priority];
+    if (candidateRank !== bestRank) {
+      if (candidateRank < bestRank) bestIndex = i;
+      continue;
+    }
+    const candidateMatches = locationMatches(candidate.location, windowTag);
+    const bestMatches = locationMatches(best.location, windowTag);
+    if (candidateMatches !== bestMatches) {
+      if (candidateMatches) bestIndex = i;
+      continue;
+    }
+    if (duration > bestDuration) bestIndex = i; // best-fit: use up more of the remaining space
+  }
+  return bestIndex;
+}
+
+/**
+ * The single best task for an ad-hoc window of free time — e.g. "what
+ * should I do with a 15-minute break?" — using the same ranking as
+ * assignTasks, without committing anything. windowTag defaults to null (no
+ * particular place), which excludes Traveling-tagged tasks (you didn't say
+ * you're traveling) but still allows place-tagged and untagged ones.
+ */
+export function pickBestTask<T extends PlanTask>(candidates: T[], remainingMinutes: number, windowTag: string | null = null): T | null {
+  const index = pickBestCandidateIndex(candidates, remainingMinutes, windowTag);
+  return index === -1 ? null : candidates[index];
+}
+
+/**
  * Greedily slots tasks into free windows, processed chronologically. Within
- * each window, repeatedly picks the best-fitting eligible task — ranked by
- * (1) earliest deadline (nulls last), (2) higher priority, (3) whether its
- * location tag matches this window's, (4) the duration that best fills the
- * remaining space — until nothing left in the queue is both eligible and
- * fits, then moves to the next window. A task too big (or too
+ * each window, repeatedly picks the best-fitting eligible task (see
+ * pickBestCandidateIndex) until nothing left in the queue is both eligible
+ * and fits, then moves to the next window. A task too big (or too
  * place-specific) for every window simply never gets picked and ends up in
  * unplacedIds.
  */
@@ -141,40 +195,7 @@ export function assignTasks(windows: LocatedWindow[], tasks: PlanTask[]): { plac
       const remainingMinutes = (window.endAt.getTime() - cursor.getTime()) / 60_000;
       if (remainingMinutes <= 0 || queue.length === 0) break;
 
-      let bestIndex = -1;
-      for (let i = 0; i < queue.length; i++) {
-        const candidate = queue[i];
-        const duration = candidate.estimatedMinutes ?? DEFAULT_TASK_MINUTES;
-        if (duration > remainingMinutes) continue;
-        if (!locationFits(candidate.location, window.locationTag)) continue;
-
-        if (bestIndex === -1) {
-          bestIndex = i;
-          continue;
-        }
-        const best = queue[bestIndex];
-        const bestDuration = best.estimatedMinutes ?? DEFAULT_TASK_MINUTES;
-        const candidateDeadline = candidate.deadline ? candidate.deadline.getTime() : Infinity;
-        const bestDeadline = best.deadline ? best.deadline.getTime() : Infinity;
-        if (candidateDeadline !== bestDeadline) {
-          if (candidateDeadline < bestDeadline) bestIndex = i;
-          continue;
-        }
-        const candidateRank = PRIORITY_RANK[candidate.priority];
-        const bestRank = PRIORITY_RANK[best.priority];
-        if (candidateRank !== bestRank) {
-          if (candidateRank < bestRank) bestIndex = i;
-          continue;
-        }
-        const candidateMatches = locationMatches(candidate.location, window.locationTag);
-        const bestMatches = locationMatches(best.location, window.locationTag);
-        if (candidateMatches !== bestMatches) {
-          if (candidateMatches) bestIndex = i;
-          continue;
-        }
-        if (duration > bestDuration) bestIndex = i; // best-fit: use up more of the remaining space
-      }
-
+      const bestIndex = pickBestCandidateIndex(queue, remainingMinutes, window.locationTag);
       if (bestIndex === -1) break; // nothing left in the queue is eligible for this window
 
       const [task] = queue.splice(bestIndex, 1);

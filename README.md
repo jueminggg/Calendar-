@@ -303,7 +303,21 @@ this:
 - **"what should I do now?"** / **"what should I do at 3pm?"** — checks
   your actual calendar events first, then already-scheduled to-dos, and
   falls back to suggesting the next backlog item if that moment is free.
+- **"what should I do, I have a 15 min break?"** — same as above, but only
+  suggests something that actually fits in the time you named, ranked by
+  earliest deadline then priority then best fit — so a 15-minute gap won't
+  get offered a 45-minute task.
+- **"need to practice for the exam 4 times, 20 min each, in 10 days"** — a
+  multi-session goal: creates 4 independent 20-minute to-dos sharing that
+  deadline, each flexible (no fixed day) until a day's plan actually has
+  room for it. They get picked up opportunistically as you keep asking
+  "what should I do" or adding things over the following days/weeks —
+  nothing proactively spreads them across the 10 days up front, so if
+  today happens to be wide open, more than one session can land on the
+  same day.
 
-The to-do vs. idea distinction still holds (see below) — phrases like "need
-to", "have to", "remember to", or an explicit "todo:" mark something as a
-to-do; anything else without a date/time still gets saved as a plain idea.
+The to-do vs. idea distinction still holds — phrases like "need to", "have
+to", "remember to", or an explicit "todo:"/"task:"/"goal:" mark something
+as a to-do (a repeat count like "4 times" or "x3" makes it a goal instead
+of a single to-do); anything else without a date/time still gets saved as
+a plain idea.
