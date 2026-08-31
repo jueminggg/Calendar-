@@ -44,7 +44,7 @@ cp .env.example .env
 # fill in DATABASE_URL, SESSION_SECRET, ENCRYPTION_KEY, SIGNUP_SECRET
 # (openssl rand -hex 32   -- for the two secrets)
 
-npx prisma migrate deploy   # creates the database tables
+npm run migrate             # creates the database tables
 npm run dev
 ```
 
@@ -151,12 +151,32 @@ until it's set.
    `ENCRYPTION_KEY` / `SIGNUP_SECRET` / `CRON_SECRET`, plus the Google/
    Microsoft values from steps 2–3 once you have them, and `ANTHROPIC_API_KEY`
    if you want the screenshot-import button to work).
-4. Deploy. The build command (`prisma migrate deploy && next build`) applies
-   any pending database migrations automatically on every deploy — nothing
-   to run by hand.
-5. Go back into Google Cloud Console / Azure and add your real
+4. Add your `DATABASE_URL` a second time as a **GitHub Actions secret**
+   (repo **Settings → Secrets and variables → Actions**). That's what applies
+   database migrations — see **Migrations** below.
+5. Deploy.
+6. Go back into Google Cloud Console / Azure and add your real
    `https://your-app.vercel.app/api/connections/.../callback` redirect URIs
    (you can add multiple redirect URIs, so keep the localhost one too).
+
+**Migrations:** the build command is `prisma generate && next build` — it does
+*not* touch the database. Migrations run in their own GitHub Actions workflow
+(`.github/workflows/migrate.yml`), which fires on any push to the default
+branch that changes `prisma/`, and can also be run by hand from the repo's
+**Actions** tab.
+
+This split matters: when migrations ran inside the build, a sleeping database
+(Neon auto-suspends, Supabase pauses inactive projects) failed the whole Vercel
+build, so the site couldn't deploy at all — even for a change that had nothing
+to do with the database. Now a database problem breaks only the migration, and
+says so plainly.
+
+The trade-off is that schema changes and code deploy independently, so ship
+them in the right order: when a migration only *adds* things, let it land
+first; when it removes or renames a column the current code still reads, deploy
+the code that stops using it first. If the workflow's `DATABASE_URL` secret
+isn't set it skips with a notice instead of failing, and you can always apply
+migrations yourself with `DATABASE_URL="<production url>" npm run migrate`.
 
 **About the sync cron:** `vercel.json` schedules `/api/cron/sync` once a day,
 since Vercel's **Hobby** plan rejects crons that run more often than that (a

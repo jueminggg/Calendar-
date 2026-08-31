@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
 
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { timezone: true } });
+  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { timezone: true } });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let result;
   try {
