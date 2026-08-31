@@ -28,8 +28,9 @@ export async function GET(request: NextRequest) {
       include: { calendarList: { include: { connection: true } } },
       orderBy: { startAt: "asc" },
     }),
-    prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } }),
+    prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } }),
   ]);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   return NextResponse.json({
     events: events.map((e) => ({
@@ -99,7 +100,8 @@ export async function POST(request: NextRequest) {
   const targets = data.targets && data.targets.length > 0 ? data.targets : [NATIVE_TARGET];
 
   if (targets.some((t) => t !== NATIVE_TARGET)) {
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+    const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (!user.externalWriteEnabled) {
       return NextResponse.json(
         { error: "Two-way sync is turned off, so this app can't create events on Google/Outlook/iCloud — uncheck those calendars, or turn it back on in Connections." },

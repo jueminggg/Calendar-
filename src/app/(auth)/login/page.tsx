@@ -12,6 +12,8 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set when a still-valid cookie pointed at an account that no longer exists.
+  const expired = params.get("expired") === "1";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +41,12 @@ function LoginForm() {
         <h1 className="text-2xl font-semibold">Sign in</h1>
         <p className="text-sm text-gray-500 mt-1">Access your unified calendar.</p>
       </div>
+
+      {expired && !error && (
+        <div className="rounded-md bg-amber-50 text-amber-800 text-sm px-3 py-2 dark:bg-amber-950 dark:text-amber-200">
+          You were signed out because that account no longer exists on the server.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 text-red-700 text-sm px-3 py-2 dark:bg-red-950 dark:text-red-300">
