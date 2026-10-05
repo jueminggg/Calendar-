@@ -29,38 +29,61 @@ export function readableTextOn(background: string): string {
   return againstDark >= againstLight ? DARK_INK : LIGHT_INK;
 }
 
-/** How far a synced event is faded. Mild on purpose: the de-emphasised chips
- *  still clear 3:1 against their own text at this level, which a heavier fade
- *  would not -- receding is the goal, disappearing is not. */
-const SYNCED_OPACITY = 0.8;
+/** Swatches offered for your own events. A plain spectrum plus a neutral,
+ *  spaced far enough apart to stay distinguishable at chip size. */
+export const EVENT_COLOR_CHOICES: { name: string; value: string }[] = [
+  { name: "Red", value: "#E23D3D" },
+  { name: "Orange", value: "#E8821E" },
+  { name: "Yellow", value: "#E3B505" },
+  { name: "Green", value: "#2E9E5B" },
+  { name: "Teal", value: "#14908C" },
+  { name: "Blue", value: "#2D6FD8" },
+  { name: "Indigo", value: "#5B4BC4" },
+  { name: "Violet", value: "#8E44AD" },
+  { name: "Pink", value: "#EC4899" },
+  { name: "Slate", value: "#5B6673" },
+];
+
+/** How faint a synced event's tint is. Alpha rather than opacity, so it
+ *  composites over whichever background the theme paints and leaves the
+ *  label at full strength instead of fading it too. */
+const SYNCED_TINT = 0.22;
+
+function withAlpha(hex: string, alpha: number): string {
+  const f = hex.replace("#", "");
+  const full = f.length === 3 ? f.split("").map((c) => c + c).join("") : f;
+  const [r, g, b] = [0, 2, 4].map((o) => parseInt(full.slice(o, o + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 /**
- * The full style for an event chip. The source's colour wins over the
- * provider's own per-calendar colour, so "iCloud events look like this" holds
- * across every calendar -- the trade being that several calendars from one
- * provider no longer differ from each other.
+ * The style for an event chip.
  *
- * Events created in this app are the ones you actually act on, so they stay
- * at full strength with heavier text and a ring, while everything synced in
- * from elsewhere sits back.
+ * Events you added here are solid in their own colour, so they read as the
+ * thing you act on. Events synced from Google, Outlook or iCloud get a faint
+ * tint of their source colour with a bar down the left edge -- the tint alone
+ * leaves two pale sources hard to tell apart.
+ *
+ * Synced chips deliberately return no `color`, leaving their label to a
+ * theme-aware class on the element; a fixed ink would fail in one theme,
+ * since the tint composites over whatever is behind it.
  */
-export function eventChipStyle(event: { source: string; calendarColor?: string | null }): {
+export function eventChipStyle(event: { source: string; color?: string | null; calendarColor?: string | null }): {
   background: string;
-  color: string;
-  opacity: number;
+  color?: string;
   fontWeight: number;
   boxShadow?: string;
 } {
-  const background = SOURCE_COLORS[event.source] ?? event.calendarColor ?? "#6B7280";
   const own = event.source === "NATIVE";
+  const base = (own ? event.color : null) ?? SOURCE_COLORS[event.source] ?? event.calendarColor ?? "#6B7280";
+
+  if (own) {
+    return { background: base, color: readableTextOn(base), fontWeight: 600 };
+  }
   return {
-    background,
-    color: readableTextOn(background),
-    opacity: own ? 1 : SYNCED_OPACITY,
-    fontWeight: own ? 600 : 400,
-    // Inset so the ring costs no layout, and tinted from the chip's own text
-    // colour so it reads on a pale chip and a dark one alike.
-    boxShadow: own ? `inset 0 0 0 1.5px ${readableTextOn(background)}66` : undefined,
+    background: withAlpha(base, SYNCED_TINT),
+    fontWeight: 400,
+    boxShadow: `inset 3px 0 0 0 ${base}`,
   };
 }
 

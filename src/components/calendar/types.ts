@@ -12,6 +12,7 @@ export type CalendarEvent = {
   attendees: { email: string; name?: string; responseStatus?: string }[] | null;
   calendarName: string;
   calendarColor: string | null;
+  color: string | null;
   connectionLabel: string | null;
   editable: boolean;
   recurrenceRule: string | null;
