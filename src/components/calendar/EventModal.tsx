@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS, SOURCE_LABELS, eventSourceFullLabel } from "@/lib/event-colors";
+import { eventChipColors, SOURCE_LABELS, eventSourceFullLabel } from "@/lib/event-colors";
 import { describeRecurrence } from "@/lib/recurrence";
 
 type CalendarOption = { id: string; name: string; provider: "GOOGLE" | "MICROSOFT" | "APPLE" };
@@ -245,7 +245,7 @@ export default function EventModal({
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span
               className="w-2 h-2 rounded-full inline-block"
-              style={{ backgroundColor: existing.calendarColor ?? SOURCE_COLORS[existing.source] }}
+              style={{ backgroundColor: eventChipColors(existing).background }}
             />
             {eventSourceFullLabel(existing)}
             {existing.connectionLabel ? ` · ${existing.connectionLabel}` : ""}

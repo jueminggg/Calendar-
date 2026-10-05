@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
+import { eventChipColors, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
 
 const HOUR_HEIGHT = 48; // px
 const HEADER_HEIGHT = 56; // px, the sticky day-of-week/date row
@@ -226,10 +226,10 @@ export default function TimeGridView({
                     <button
                       key={e.id}
                       onClick={() => onEventClick(e)}
-                      className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
+                      className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 ${
                         selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                       }`}
-                      style={{ backgroundColor: e.calendarColor ?? SOURCE_COLORS[e.source] }}
+                      style={eventChipColors(e)}
                       title={`${e.title} (${eventSourceFullLabel(e)})`}
                     >
                       {selected ? "✓ " : ""}
@@ -288,7 +288,7 @@ export default function TimeGridView({
                       onPointerMove={handlePointerMove}
                       onPointerUp={(e) => handlePointerUp(e, p, dayIndex)}
                       onPointerCancel={handlePointerCancel}
-                      className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight text-white overflow-hidden text-left ${
+                      className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight overflow-hidden text-left ${
                         selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                       } ${isDragging ? "shadow-lg z-30 opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{
@@ -296,7 +296,7 @@ export default function TimeGridView({
                         height: Math.max(p.height, 18),
                         left: isDragging ? 0 : `${(p.col / p.totalCols) * 100}%`,
                         width: isDragging ? "100%" : `${100 / p.totalCols}%`,
-                        backgroundColor: p.event.calendarColor ?? SOURCE_COLORS[p.event.source],
+                        ...eventChipColors(p.event),
                         touchAction: canDrag ? "none" : undefined,
                       }}
                       title={`${p.event.title} (${eventSourceFullLabel(p.event)})`}
