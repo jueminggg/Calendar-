@@ -51,6 +51,8 @@ export default function TodoPage() {
   const [priority, setPriority] = useState<Priority>("MED");
   const [location, setLocation] = useState("");
   const [adding, setAdding] = useState(false);
+  // True while a field in the add form has focus -- see handleComposeFocus.
+  const [composing, setComposing] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -70,6 +72,30 @@ export default function TodoPage() {
     setPlanMessage(null);
     setPlanError(null);
   }, [load]);
+
+  /**
+   * iOS keeps the layout viewport at full height when the keyboard opens, so
+   * the scrolling <main> never learns that the bottom of the screen is
+   * covered. This form is the last thing on the page, so there is nothing
+   * left for it to scroll and Safari shifts the whole document instead,
+   * carrying the field you are typing in off-screen.
+   *
+   * Giving the page room below the form while a field is focused leaves
+   * something to scroll, and putting the field in the middle of the
+   * container lands it above the keyboard.
+   */
+  function handleComposeFocus(e: React.FocusEvent<HTMLFormElement>) {
+    setComposing(true);
+    const field = e.target as HTMLElement;
+    // Wait out the keyboard animation, or we scroll against the old viewport.
+    window.setTimeout(() => field.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+  }
+
+  function handleComposeBlur(e: React.FocusEvent<HTMLFormElement>) {
+    // Moving between fields inside the form is not leaving it; collapsing the
+    // padding on every hop would make the page jump under your thumb.
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setComposing(false);
+  }
 
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
@@ -167,7 +193,7 @@ export default function TodoPage() {
   const doneCount = tasks.filter((t) => t.done).length;
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className={`p-4 max-w-2xl mx-auto ${composing ? "pb-[60vh]" : ""}`}>
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">{dayLabel}</h1>
         <div className="flex items-center gap-2 flex-wrap">
@@ -256,7 +282,12 @@ export default function TodoPage() {
         </ul>
       )}
 
-      <form onSubmit={addTask} className="rounded-lg border border-gray-200 dark:border-gray-800 p-3 space-y-2">
+      <form
+        onSubmit={addTask}
+        onFocus={handleComposeFocus}
+        onBlur={handleComposeBlur}
+        className="rounded-lg border border-gray-200 dark:border-gray-800 p-3 space-y-2"
+      >
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
