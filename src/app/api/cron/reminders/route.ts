@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/push";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { eventSourceTag } from "@/lib/event-colors";
+import { todaysTodos, formatTodos } from "@/lib/daily-todos";
 
 /**
  * True once local time has reached (or just passed) the target HH:MM, within
@@ -109,7 +110,16 @@ export async function GET(request: NextRequest) {
     ) {
       const todayStart = now.startOf("day");
       const events = await fetchAgendaEvents(user.id, todayStart, todayStart.plus({ days: 1 }));
-      await sendTelegramMessage(user.telegramChatId, formatAgenda("Today's agenda", events, tz));
+      // The day's to-dos ride along with the agenda rather than arriving as a
+      // second notification -- one morning message, calendar then checklist.
+      const todos = await todaysTodos(user.id, tz);
+      const morning = [
+        formatAgenda("Today's agenda", events, tz),
+        formatTodos("Today's to-dos", todos, {
+          emptyHint: 'Nothing yet \u2014 reply with something like "need to call the bank" to add one.',
+        }),
+      ].join("\n\n");
+      await sendTelegramMessage(user.telegramChatId, morning);
       await prisma.user.update({ where: { id: user.id }, data: { lastTelegramMorningAgendaSentAt: now.toJSDate() } });
       sent++;
     }
@@ -121,7 +131,12 @@ export async function GET(request: NextRequest) {
     ) {
       const tomorrowStart = now.startOf("day").plus({ days: 1 });
       const events = await fetchAgendaEvents(user.id, tomorrowStart, tomorrowStart.plus({ days: 1 }));
-      await sendTelegramMessage(user.telegramChatId, formatAgenda("Tomorrow's agenda", events, tz));
+      // Today's list comes back at night to be ticked off. Skipped entirely
+      // when there was nothing on it, so a quiet day doesn't get nagged.
+      const todos = await todaysTodos(user.id, tz);
+      const parts = [formatAgenda("Tomorrow's agenda", events, tz)];
+      if (todos.length > 0) parts.push(formatTodos("Check off today", todos));
+      await sendTelegramMessage(user.telegramChatId, parts.join("\n\n"));
       await prisma.user.update({ where: { id: user.id }, data: { lastTelegramEveningAgendaSentAt: now.toJSDate() } });
       sent++;
     }
