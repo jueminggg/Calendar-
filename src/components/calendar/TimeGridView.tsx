@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { eventChipColors, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
+import { eventChipStyle, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
 
 const HOUR_HEIGHT = 48; // px
 const HEADER_HEIGHT = 56; // px, the sticky day-of-week/date row
@@ -229,7 +229,10 @@ export default function TimeGridView({
                       className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 ${
                         selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                       }`}
-                      style={eventChipColors(e)}
+                      style={{
+                        ...eventChipStyle(e),
+                        ...(selectedIds && !selected ? { opacity: 0.4 } : {}),
+                      }}
                       title={`${e.title} (${eventSourceFullLabel(e)})`}
                     >
                       {selected ? "✓ " : ""}
@@ -296,7 +299,8 @@ export default function TimeGridView({
                         height: Math.max(p.height, 18),
                         left: isDragging ? 0 : `${(p.col / p.totalCols) * 100}%`,
                         width: isDragging ? "100%" : `${100 / p.totalCols}%`,
-                        ...eventChipColors(p.event),
+                        ...eventChipStyle(p.event),
+                        ...(selectedIds && !selected ? { opacity: 0.4 } : isDragging ? { opacity: 0.9 } : {}),
                         touchAction: canDrag ? "none" : undefined,
                       }}
                       title={`${p.event.title} (${eventSourceFullLabel(p.event)})`}

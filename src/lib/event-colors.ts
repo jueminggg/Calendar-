@@ -29,18 +29,39 @@ export function readableTextOn(background: string): string {
   return againstDark >= againstLight ? DARK_INK : LIGHT_INK;
 }
 
+/** How far a synced event is faded. Mild on purpose: the de-emphasised chips
+ *  still clear 3:1 against their own text at this level, which a heavier fade
+ *  would not -- receding is the goal, disappearing is not. */
+const SYNCED_OPACITY = 0.8;
+
 /**
- * Background and text for an event chip. The source's colour wins over the
+ * The full style for an event chip. The source's colour wins over the
  * provider's own per-calendar colour, so "iCloud events look like this" holds
  * across every calendar -- the trade being that several calendars from one
  * provider no longer differ from each other.
+ *
+ * Events created in this app are the ones you actually act on, so they stay
+ * at full strength with heavier text and a ring, while everything synced in
+ * from elsewhere sits back.
  */
-export function eventChipColors(event: { source: string; calendarColor?: string | null }): {
+export function eventChipStyle(event: { source: string; calendarColor?: string | null }): {
   background: string;
   color: string;
+  opacity: number;
+  fontWeight: number;
+  boxShadow?: string;
 } {
   const background = SOURCE_COLORS[event.source] ?? event.calendarColor ?? "#6B7280";
-  return { background, color: readableTextOn(background) };
+  const own = event.source === "NATIVE";
+  return {
+    background,
+    color: readableTextOn(background),
+    opacity: own ? 1 : SYNCED_OPACITY,
+    fontWeight: own ? 600 : 400,
+    // Inset so the ring costs no layout, and tinted from the chip's own text
+    // colour so it reads on a pale chip and a dark one alike.
+    boxShadow: own ? `inset 0 0 0 1.5px ${readableTextOn(background)}66` : undefined,
+  };
 }
 
 export const SOURCE_LABELS: Record<string, string> = {
