@@ -7,10 +7,32 @@ import { verifyAppleCredentials, listAppleCalendars } from "@/lib/providers/appl
 import { syncAppleConnection } from "@/lib/sync/apple";
 
 const connectSchema = z.object({
-  username: z.string().email(),
-  appSpecificPassword: z.string().min(1),
-  serverUrl: z.string().url().optional(),
+  // Trimmed before validating: autofill and paste routinely leave a trailing
+  // space, and Apple rejects the credential without saying why -- which is
+  // indistinguishable from genuinely wrong details.
+  username: z.string().trim().email(),
+  appSpecificPassword: z.string().trim().min(1),
+  serverUrl: z.string().trim().url().optional(),
 });
+
+/**
+ * Apple's own complaint, made safe to show. This app is private and
+ * invite-gated, so the real reason beats a generic line by a mile. The
+ * password is redacted first, in case a client library ever echoes the
+ * request it built back in the error.
+ */
+function appleFailureMessage(error: unknown, secret: string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const detail = (secret ? raw.split(secret).join("***") : raw).replace(/\s+/g, " ").trim().slice(0, 300);
+
+  if (/\b401\b|unauthoriz|authenticat|forbidden|\b403\b/i.test(detail)) {
+    return "Apple rejected those credentials. Use the Apple ID itself (an @icloud.com address works most reliably) with a freshly generated app-specific password.";
+  }
+  if (!detail) {
+    return "Couldn't reach iCloud, and Apple gave no reason. Try again shortly.";
+  }
+  return `Couldn't sign in to iCloud. Apple said: ${detail}`;
+}
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -26,11 +48,12 @@ export async function POST(request: Request) {
   let client;
   try {
     client = await verifyAppleCredentials(username, appSpecificPassword, serverUrl);
-  } catch {
-    return NextResponse.json(
-      { error: "Couldn't sign in to iCloud. Double-check the email and app-specific password." },
-      { status: 401 },
-    );
+  } catch (error) {
+    // This used to be a bare catch, so a wrong password, an Apple outage and
+    // a request that never left the building all produced the same sentence
+    // with nothing in the logs either.
+    console.error("iCloud connect failed for", username, error);
+    return NextResponse.json({ error: appleFailureMessage(error, appSpecificPassword) }, { status: 401 });
   }
 
   const connection = await prisma.calendarConnection.upsert({
