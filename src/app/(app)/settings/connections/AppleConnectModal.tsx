@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { postJson } from "@/lib/http";
 
 export default function AppleConnectModal({ onClose, onConnected }: { onClose: () => void; onConnected: () => void }) {
   const [username, setUsername] = useState("");
@@ -13,14 +14,9 @@ export default function AppleConnectModal({ onClose, onConnected }: { onClose: (
     setError(null);
     setSaving(true);
     try {
-      const res = await fetch("/api/connections/apple", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, appSpecificPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong");
+      const result = await postJson("/api/connections/apple", { username, appSpecificPassword });
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
       onConnected();
