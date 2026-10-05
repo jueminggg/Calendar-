@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS, SOURCE_LABELS, eventSourceFullLabel } from "@/lib/event-colors";
+import { eventChipStyle, EVENT_COLOR_CHOICES, SOURCE_LABELS, eventSourceFullLabel } from "@/lib/event-colors";
 import { describeRecurrence } from "@/lib/recurrence";
 
 type CalendarOption = { id: string; name: string; provider: "GOOGLE" | "MICROSOFT" | "APPLE" };
@@ -68,6 +68,8 @@ export default function EventModal({
   const [externalWriteEnabled, setExternalWriteEnabled] = useState(true);
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(existing?.reminderMinutesBefore ?? null);
   const [reminderSaving, setReminderSaving] = useState(false);
+  // Only ever sent for native events; a synced event's colour is its provider's.
+  const [color, setColor] = useState<string | null>(existing?.color ?? null);
 
   const isReadOnly = Boolean(existing && existing.source !== "NATIVE" && existing.editable === false);
 
@@ -173,6 +175,7 @@ export default function EventModal({
         startAt: new Date(start).toISOString(),
         endAt: new Date(end).toISOString(),
         allDay,
+        color,
         ...(existing
           ? {}
           : {
@@ -245,7 +248,7 @@ export default function EventModal({
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span
               className="w-2 h-2 rounded-full inline-block"
-              style={{ backgroundColor: existing.calendarColor ?? SOURCE_COLORS[existing.source] }}
+              style={{ backgroundColor: eventChipStyle(existing).background }}
             />
             {eventSourceFullLabel(existing)}
             {existing.connectionLabel ? ` · ${existing.connectionLabel}` : ""}
@@ -458,6 +461,42 @@ export default function EventModal({
             </div>
           )}
         </div>
+
+        {!isReadOnly && (!existing || existing.source === "NATIVE") && (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Colour</label>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setColor(null)}
+                aria-pressed={color === null}
+                title="Default"
+                className={`w-7 h-7 rounded-full border text-[10px] text-gray-500 dark:text-gray-400 ${
+                  color === null
+                    ? "border-gray-900 dark:border-gray-100 ring-2 ring-offset-1 ring-gray-400 dark:ring-offset-gray-900"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
+              >
+                —
+              </button>
+              {EVENT_COLOR_CHOICES.map((choice) => (
+                <button
+                  key={choice.value}
+                  type="button"
+                  onClick={() => setColor(choice.value)}
+                  aria-pressed={color === choice.value}
+                  title={choice.name}
+                  style={{ backgroundColor: choice.value }}
+                  className={`w-7 h-7 rounded-full border ${
+                    color === choice.value
+                      ? "border-gray-900 dark:border-gray-100 ring-2 ring-offset-1 ring-gray-400 dark:ring-offset-gray-900"
+                      : "border-black/10"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap justify-between gap-2 pt-2">
           {existing ? (

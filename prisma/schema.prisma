@@ -271,6 +271,11 @@ model Event {
   // after Claude read it out of a pasted/uploaded image.
   importedVia String?
 
+  /// Per-event colour for native events, chosen in the event editor. Null
+  /// means fall back to the source colour. Synced events ignore this -- their
+  /// colour comes from the provider they belong to.
+  color             String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

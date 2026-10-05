@@ -11,6 +11,8 @@ const updateSchema = z.object({
   startAt: z.string().optional(),
   endAt: z.string().optional(),
   allDay: z.boolean().optional(),
+  // Native events only -- a synced event's colour belongs to its provider.
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a #rrggbb colour").nullable().optional(),
 });
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/events/[id]">) {
@@ -86,6 +88,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/events
         startAt: data.startAt ? new Date(data.startAt) : undefined,
         endAt: data.endAt ? new Date(data.endAt) : undefined,
         allDay: data.allDay,
+        color: data.color,
       },
     });
     return NextResponse.json({ event: updated });

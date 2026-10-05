@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { CalendarEvent } from "./types";
-import { SOURCE_COLORS, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
+import { eventChipStyle, eventSourceTag, eventSourceFullLabel } from "@/lib/event-colors";
 
 const LONG_PRESS_MS = 400;
 const MOVE_CANCEL_PX = 8;
@@ -189,10 +189,16 @@ export default function MonthGrid({
                     onPointerMove={handlePointerMove}
                     onPointerUp={(e) => handlePointerUp(e, event)}
                     onPointerCancel={handlePointerCancel}
-                    className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 text-white ${
+                    className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 ${
                       selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
                     } ${isDragging ? "shadow-lg opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
-                    style={{ backgroundColor: event.calendarColor ?? SOURCE_COLORS[event.source], touchAction: canDrag ? "none" : undefined }}
+                    style={{
+                      ...eventChipStyle(event),
+                      // Inline opacity beats the opacity-* classes above, so the
+                      // selection dim and drag states have to be restated here.
+                      ...(selectedIds && !selected ? { opacity: 0.4 } : isDragging ? { opacity: 0.9 } : {}),
+                      touchAction: canDrag ? "none" : undefined,
+                    }}
                     title={`${event.title} (${eventSourceFullLabel(event)})`}
                   >
                     {selected ? "✓ " : ""}

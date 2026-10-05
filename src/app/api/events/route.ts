@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
       attendees: e.attendees,
       calendarName: e.calendarList?.name ?? "My Calendar",
       calendarColor: e.calendarList?.color ?? null,
+      color: e.color,
       connectionLabel: e.calendarList?.connection.label ?? null,
       editable: e.source === "NATIVE" || user.externalWriteEnabled,
       recurrenceRule: e.recurrenceRule,
@@ -85,6 +86,8 @@ const createSchema = z.object({
   recurrence: recurrenceSchema.optional(),
   // Minutes before the event to send a push/Telegram reminder; purely local metadata.
   reminderMinutesBefore: z.number().int().min(0).max(43200).nullable().optional(),
+  // Only meaningful for native events; synced ones take their provider's colour.
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a #rrggbb colour").nullable().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -146,6 +149,7 @@ export async function POST(request: NextRequest) {
             allDay: writeInput.allDay,
             timezone: writeInput.timezone,
             status: "CONFIRMED",
+            color: data.color ?? null,
             recurrenceRule,
             recurringEventId: seriesId,
             reminderMinutesBefore: data.reminderMinutesBefore ?? null,
@@ -183,6 +187,7 @@ export async function POST(request: NextRequest) {
         allDay: writeInput.allDay,
         timezone: writeInput.timezone,
         status: "CONFIRMED",
+        color: data.color ?? null,
         reminderMinutesBefore: data.reminderMinutesBefore ?? null,
       },
     });
