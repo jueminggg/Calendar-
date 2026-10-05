@@ -3,10 +3,18 @@ import { DateTime } from "luxon";
 import { prisma } from "@/lib/prisma";
 import { sendTelegramMessage, sendTelegramMessageWithButtons, answerCallbackQuery } from "@/lib/telegram";
 import {
+  todaysTodos,
+  formatTodos,
+  completeTodoByRef,
+  findTodoByPhrase,
+  completeTodo,
+} from "@/lib/daily-todos";
+import {
   parseMessageIntent,
   parseTaskIntent,
   parseGoalIntent,
   parseWhatNextIntent,
+  parseDoneIntent,
   type EventIntent,
   type AvailabilityIntent,
   type TaskIntent,
@@ -454,7 +462,7 @@ export async function POST(request: NextRequest) {
     });
     await sendTelegramMessage(
       chatIdStr,
-      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, "need to call the bank while traveling" to add a to-do (auto-slotted in), "need to practice for the exam 4 times, 20 min each, by friday" to add a multi-session goal, "what should I do, I have a 15 min break?" any time, or anything else to jot down as an idea. /ideas, /done <ref>, /postpone <ref>.',
+      'Linked! Send me a message like "lunch with sarah tomorrow 1pm" to schedule it, "am I free friday 3pm?" to check your calendar, "need to call the bank while traveling" to add a to-do (auto-slotted in), "need to practice for the exam 4 times, 20 min each, by friday" to add a multi-session goal, "what should I do, I have a 15 min break?" any time, or anything else to jot down as an idea. Send /todos for today\u2019s checklist, and \"finished the bank call\" to tick one off. /todos, /ideas, /done <ref>, /postpone <ref>.',
     );
     return NextResponse.json({ ok: true });
   }
@@ -473,9 +481,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (/^\/todos(?:@\S+)?(\s|$)/i.test(text)) {
+    const todos = await todaysTodos(linkedUser.id, linkedUser.timezone || "UTC");
+    await sendTelegramMessage(
+      chatIdStr,
+      formatTodos("Today's to-dos", todos, {
+        emptyHint: 'Nothing yet \u2014 send something like "need to call the bank" to add one.',
+      }),
+    );
+    return NextResponse.json({ ok: true });
+  }
+
   const doneMatch = text.match(/^\/done(?:@\S+)?\s+(\S+)/i);
   if (doneMatch) {
-    await markIdeaDone(chatIdStr, linkedUser.id, doneMatch[1]);
+    // To-dos and ideas print refs in the same format, so try the to-do first
+    // and fall back to ideas -- /done keeps behaving exactly as before for
+    // anything listed by /ideas.
+    const completed = await completeTodoByRef(linkedUser.id, doneMatch[1]);
+    if (completed) {
+      await sendTelegramMessage(chatIdStr, `\u2705 Ticked off: ${completed.title}`);
+    } else {
+      await markIdeaDone(chatIdStr, linkedUser.id, doneMatch[1]);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -501,7 +528,7 @@ export async function POST(request: NextRequest) {
   if (text.startsWith("/")) {
     await sendTelegramMessage(
       chatIdStr,
-      "Unknown command. Try /ideas, /done <ref>, /postpone <ref>, /task <text>, or just send a message.",
+      "Unknown command. Try /todos, /ideas, /done <ref>, /postpone <ref>, /task <text>, or just send a message.",
     );
     return NextResponse.json({ ok: true });
   }
@@ -513,6 +540,19 @@ export async function POST(request: NextRequest) {
   if (whatNext) {
     await handleWhatNext(chatIdStr, linkedUser, whatNext.at, whatNext.durationMinutes);
     return NextResponse.json({ ok: true });
+  }
+
+  // "finished the bank call" ticks an existing to-do off. Only acts on a
+  // decisive match; anything vaguer falls through to the handling below, so
+  // a message that merely sounds like this is still saved as usual.
+  const doneIntent = parseDoneIntent(text);
+  if (doneIntent) {
+    const match = await findTodoByPhrase(linkedUser.id, doneIntent.phrase);
+    if (match) {
+      await completeTodo(match.id);
+      await sendTelegramMessage(chatIdStr, `\u2705 Ticked off: ${match.title}`);
+      return NextResponse.json({ ok: true });
+    }
   }
 
   const goalIntent = parseGoalIntent(text, { timezone: tz, now });

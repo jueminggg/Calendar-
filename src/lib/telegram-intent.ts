@@ -269,6 +269,30 @@ export function parseGoalIntent(text: string, opts: { timezone: string; now: Dat
   };
 }
 
+export type DoneIntent = { kind: "complete_task"; phrase: string };
+
+// "finished the bank call", "did the laundry" / "the laundry is done".
+const DONE_PREFIX = /^(?:i\s+)?(?:just\s+)?(?:finished|completed|done\s+with|did)\s+(.+)$/i;
+const DONE_SUFFIX = /^(.+?)\s+(?:is\s+|are\s+)?(?:done|finished|completed)$/i;
+
+/**
+ * Recognises a claim that an existing to-do is finished. It only reads the
+ * phrasing — whether any to-do actually matches is the caller's problem — so
+ * an unrecognised subject falls through to the normal handling instead of
+ * being swallowed. A bare "done" returns null: too vague to act on, and
+ * /done <ref> already covers the explicit case.
+ */
+export function parseDoneIntent(text: string): DoneIntent | null {
+  const trimmed = text.trim();
+  if (/^(?:done|finished|completed)$/i.test(trimmed)) return null;
+
+  const match = DONE_PREFIX.exec(trimmed) ?? DONE_SUFFIX.exec(trimmed);
+  if (!match) return null;
+
+  const phrase = match[1].replace(/[\s.!,]+$/, "").trim();
+  return phrase ? { kind: "complete_task", phrase } : null;
+}
+
 const WHAT_NEXT_PATTERN = /^(what should i do|what'?s next|what do i have|what am i doing)\b/i;
 
 /**

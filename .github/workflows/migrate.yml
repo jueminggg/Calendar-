@@ -1,0 +1,52 @@
+# Applies pending Prisma migrations to the production database.
+#
+# This deliberately does not run during `npm run build`. Coupling the two meant
+# a sleeping or unreachable database failed the Vercel build outright, so an
+# unrelated frontend fix could not ship while the database was down. Here a
+# failed migration is loud and specific, and it never blocks a deploy.
+name: Migrate database
+
+on:
+  push:
+    paths:
+      - "prisma/migrations/**"
+      - "prisma/schema.prisma"
+  workflow_dispatch:
+
+# Never let two migration runs overlap on the same database.
+concurrency:
+  group: migrate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    # Only the branch Vercel deploys should touch the production database.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check for the DATABASE_URL secret
+        id: check
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::DATABASE_URL secret is not set, so migrations were skipped. Add it under Settings -> Secrets and variables -> Actions, or run 'npm run migrate' locally against production."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A missing secret is a setup step the owner has not done yet, so it is a
+      # notice rather than a red X. A migration that genuinely fails is not.
+      - name: Apply migrations
+        if: steps.check.outputs.ready == 'true'
+        run: npm run migrate

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { createSessionCookie } from "@/lib/session";
+import { serverErrorMessage } from "@/lib/server-error";
 
 const signupSchema = z.object({
   email: z.string().email(),
@@ -31,17 +32,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid invite code" }, { status: 403 });
   }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: "An account with that email already exists" }, { status: 409 });
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ error: "An account with that email already exists" }, { status: 409 });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const user = await prisma.user.create({
+      data: { email, passwordHash, name },
+    });
+
+    await createSessionCookie({ userId: user.id, email: user.email });
+  } catch (error) {
+    console.error("Sign-up failed:", error);
+    return NextResponse.json({ error: serverErrorMessage(error) }, { status: 500 });
   }
-
-  const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: { email, passwordHash, name },
-  });
-
-  await createSessionCookie({ userId: user.id, email: user.email });
 
   return NextResponse.json({ ok: true });
 }

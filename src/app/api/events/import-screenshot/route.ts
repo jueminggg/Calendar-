@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Image is too large (max 10MB)" }, { status: 400 });
   }
 
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId } });
+  const user = await prisma.user.findUnique({ where: { id: session.userId } });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const buffer = Buffer.from(await file.arrayBuffer());
 
   let events;

@@ -95,7 +95,8 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/events
     return NextResponse.json({ error: "This event isn't linked to a connected calendar." }, { status: 400 });
   }
 
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!user.externalWriteEnabled) {
     return NextResponse.json(
       { error: "Two-way sync is turned off — this event can only be edited on its original calendar. Turn it back on in Connections if you want changes here to sync." },
@@ -170,7 +171,8 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/event
     if (!event.calendarList || !event.externalId) {
       return NextResponse.json({ error: "This event isn't linked to a connected calendar." }, { status: 400 });
     }
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+    const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } });
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (!user.externalWriteEnabled) {
       return NextResponse.json(
         { error: "Two-way sync is turned off — this event can only be deleted on its original calendar." },

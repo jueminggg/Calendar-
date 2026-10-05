@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { postJson } from "@/lib/http";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -18,14 +19,9 @@ export default function SignupPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, inviteCode }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong");
+      const result = await postJson("/api/auth/signup", { email, password, name, inviteCode });
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
       router.replace("/");

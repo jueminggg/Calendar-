@@ -15,7 +15,8 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId }, select: SELECT });
+  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: SELECT });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { telegramChatId, ...rest } = user;
   return NextResponse.json({ linked: telegramChatId !== null, ...rest });
 }
