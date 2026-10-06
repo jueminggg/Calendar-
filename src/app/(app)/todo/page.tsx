@@ -53,6 +53,8 @@ export default function TodoPage() {
   const [adding, setAdding] = useState(false);
   // True while a field in the add form has focus -- see handleComposeFocus.
   const [composing, setComposing] = useState(false);
+  // Pixels of the viewport the on-screen keyboard is currently covering.
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [planning, setPlanning] = useState(false);
   const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -74,26 +76,43 @@ export default function TodoPage() {
   }, [load]);
 
   /**
-   * iOS keeps the layout viewport at full height when the keyboard opens, so
-   * the scrolling <main> never learns that the bottom of the screen is
-   * covered. This form is the last thing on the page, so there is nothing
-   * left for it to scroll and Safari shifts the whole document instead,
-   * carrying the field you are typing in off-screen.
+   * The page is exactly viewport-height with nothing to scroll, so when the
+   * keyboard opens over this form -- the last thing on the page -- iOS cannot
+   * scroll within the document to clear it and scrolls past the end instead,
+   * leaving a blank expanse under the form.
    *
-   * Giving the page room below the form while a field is focused leaves
-   * something to scroll, and putting the field in the middle of the
-   * container lands it above the keyboard.
+   * Padding by a guessed amount only trades one void for another. visualViewport
+   * reports what the keyboard is actually covering, so the page grows by exactly
+   * that much: enough to scroll the field clear, and the added space sits behind
+   * the keyboard where it is never seen. Browsers without visualViewport get no
+   * padding and the behaviour they had before.
    */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv || !composing) return;
+    const measure = () => setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    // Measured on the next frame rather than inline: the keyboard is still
+    // animating, and setting state in an effect body cascades a render.
+    const frame = requestAnimationFrame(measure);
+    vv.addEventListener("resize", measure);
+    vv.addEventListener("scroll", measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      vv.removeEventListener("resize", measure);
+      vv.removeEventListener("scroll", measure);
+    };
+  }, [composing]);
+
   function handleComposeFocus(e: React.FocusEvent<HTMLFormElement>) {
     setComposing(true);
     const field = e.target as HTMLElement;
-    // Wait out the keyboard animation, or we scroll against the old viewport.
-    window.setTimeout(() => field.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+    // Wait out the keyboard animation, or this measures the old viewport.
+    window.setTimeout(() => field.scrollIntoView({ block: "center", behavior: "smooth" }), 350);
   }
 
   function handleComposeBlur(e: React.FocusEvent<HTMLFormElement>) {
     // Moving between fields inside the form is not leaving it; collapsing the
-    // padding on every hop would make the page jump under your thumb.
+    // padding on every hop would jump the page under your thumb.
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setComposing(false);
   }
 
@@ -193,7 +212,10 @@ export default function TodoPage() {
   const doneCount = tasks.filter((t) => t.done).length;
 
   return (
-    <div className={`p-4 max-w-2xl mx-auto ${composing ? "pb-[60vh]" : ""}`}>
+    <div
+      className="p-4 max-w-2xl mx-auto"
+      style={composing && keyboardInset ? { paddingBottom: keyboardInset } : undefined}
+    >
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">{dayLabel}</h1>
         <div className="flex items-center gap-2 flex-wrap">
