@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import MonthGrid from "@/components/calendar/MonthGrid";
 import TimeGridView from "@/components/calendar/TimeGridView";
 import EventModal from "@/components/calendar/EventModal";
@@ -37,6 +38,7 @@ function isSameDay(a: Date, b: Date): boolean {
 export default function CalendarPage() {
   const [view, setView] = useState<ViewMode>("month");
   const [cursor, setCursor] = useState<Date>(() => startOfDay(new Date()));
+  const router = useRouter();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<{ mode: "create"; date: Date } | { mode: "edit"; event: CalendarEvent } | null>(
@@ -88,6 +90,13 @@ export default function CalendarPage() {
   }
 
   function handleEventClick(event: CalendarEvent) {
+    // A to-do only looks like an event here. It has no Event row behind it, so
+    // neither the editor nor select-and-delete can act on it -- send you to
+    // where it actually lives instead.
+    if (event.kind === "task") {
+      router.push("/todo");
+      return;
+    }
     if (!selectMode) {
       setModal({ mode: "edit", event });
       return;
