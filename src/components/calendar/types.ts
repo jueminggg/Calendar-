@@ -19,4 +19,8 @@ export type CalendarEvent = {
   recurringEventId: string | null;
   reminderMinutesBefore: number | null;
   importedVia: string | null;
+  /** "task" entries are time-blocked to-dos rendered here; they are not Event
+   *  rows, so they cannot be edited, dragged or deleted from the calendar. */
+  kind: "event" | "task";
+  done: boolean;
 };

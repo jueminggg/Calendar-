@@ -197,7 +197,14 @@ export default function TimeGridView({
 
   function handlePointerUp(e: React.PointerEvent<HTMLButtonElement>, p: Placed, dayIndex: number) {
     clearLongPressTimer();
-    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    // A chip that cannot be dragged never starts a drag, so pointer-up on it is
+    // simply a click. Without this, nothing read-only could be opened at all:
+    // synced events while two-way sync is off, and time-blocked to-dos.
+    if (!dragState) {
+      onEventClick(p.event);
+      return;
+    }
+    if (e.pointerId !== dragState.pointerId) return;
     const wasArmed = dragState.armed;
     const moved = Math.abs(dragState.liveTop - dragState.originTop);
     setDragState(null);
