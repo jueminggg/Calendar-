@@ -18,7 +18,16 @@ function minutesSinceMidnight(d: Date): number {
 type Placed = { event: CalendarEvent; col: number; totalCols: number; top: number; height: number };
 
 /** Lays timed events out into side-by-side columns for a single day, clamping
- *  multi-day events to this day's midnight-to-midnight window. */
+ *  multi-day events to this day's midnight-to-midnight window.
+ *
+ *  Columns are packed per overlap cluster rather than across the whole day, so
+ *  the ordering below only competes between events that actually share screen
+ *  space. Within a cluster your own events are placed first and therefore take
+ *  the leftmost columns; everything synced in keeps chronological order behind
+ *  them. Placing out of time order can cost a cluster an extra column, but it
+ *  never puts two overlapping events in the same one -- a column is only reused
+ *  once its previous occupant has ended.
+ */
 function layoutDay(day: Date, dayEvents: CalendarEvent[]): Placed[] {
   const timed = dayEvents
     .map((e) => {
@@ -30,23 +39,51 @@ function layoutDay(day: Date, dayEvents: CalendarEvent[]): Placed[] {
     })
     .sort((a, b) => a.startMin - b.startMin);
 
-  const columns: { end: number }[] = [];
-  const withCols = timed.map((t) => {
-    let col = columns.findIndex((c) => c.end <= t.startMin);
-    if (col === -1) {
-      col = columns.length;
-      columns.push({ end: t.endMin });
-    } else {
-      columns[col].end = t.endMin;
-    }
-    return { ...t, col };
-  });
-  const totalCols = columns.length || 1;
+  type Timed = (typeof timed)[number];
 
-  return withCols.map((t) => ({
+  // A cluster breaks where an event starts after everything before it has ended.
+  const clusters: Timed[][] = [];
+  let current: Timed[] = [];
+  let clusterEnd = -Infinity;
+  for (const t of timed) {
+    if (current.length > 0 && t.startMin >= clusterEnd) {
+      clusters.push(current);
+      current = [];
+      clusterEnd = -Infinity;
+    }
+    current.push(t);
+    clusterEnd = Math.max(clusterEnd, t.endMin);
+  }
+  if (current.length > 0) clusters.push(current);
+
+  const placed: (Timed & { col: number })[] = [];
+  let widest = 1;
+
+  for (const cluster of clusters) {
+    const ordered = [...cluster].sort((a, b) => {
+      const ownFirst = Number(b.event.source === "NATIVE") - Number(a.event.source === "NATIVE");
+      return ownFirst !== 0 ? ownFirst : a.startMin - b.startMin;
+    });
+
+    const columns: { end: number }[] = [];
+    for (const t of ordered) {
+      let col = columns.findIndex((c) => c.end <= t.startMin);
+      if (col === -1) {
+        col = columns.length;
+        columns.push({ end: t.endMin });
+      } else {
+        // Out-of-order placement means an existing end can already be later.
+        columns[col].end = Math.max(columns[col].end, t.endMin);
+      }
+      placed.push({ ...t, col });
+    }
+    widest = Math.max(widest, columns.length);
+  }
+
+  return placed.map((t) => ({
     event: t.event,
     col: t.col,
-    totalCols,
+    totalCols: widest,
     top: (t.startMin / 60) * HOUR_HEIGHT,
     height: ((t.endMin - t.startMin) / 60) * HOUR_HEIGHT,
   }));
