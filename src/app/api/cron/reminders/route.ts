@@ -59,37 +59,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const users = await prisma.user.findMany({ where: { remindersEnabled: true } });
   let sent = 0;
 
-  for (const user of users) {
-    const tz = user.timezone || "UTC";
-    const now = DateTime.now().setZone(tz);
-    const todayKey = now.toISODate() ?? "";
-
-    if (!alreadySentToday(user.lastMorningReminderSentAt, tz, todayKey) && isDue(now, user.morningReminderTime)) {
-      await sendPushToUser(user.id, {
-        title: "Plan your day",
-        body: "Review your calendar and set today's to-dos.",
-        url: "/todo",
-      });
-      await prisma.user.update({ where: { id: user.id }, data: { lastMorningReminderSentAt: now.toJSDate() } });
-      sent++;
-    }
-
-    if (!alreadySentToday(user.lastEveningReminderSentAt, tz, todayKey) && isDue(now, user.eveningReminderTime)) {
-      await sendPushToUser(user.id, {
-        title: "Check off your day",
-        body: "See what you got done and carry over what's left.",
-        url: "/todo",
-      });
-      await prisma.user.update({ where: { id: user.id }, data: { lastEveningReminderSentAt: now.toJSDate() } });
-      sent++;
-    }
-  }
-
-  // Telegram daily agenda messages: independent of the push-based daily
-  // reminders above, gated on their own enabled flags + having linked a chat.
+  // Daily planning now arrives over Telegram only — the agenda message carries
+  // the day's to-dos, so a push saying "go set your to-dos" was a second
+  // notification for the same thing.
+  //
+  // Telegram daily agenda messages, gated on their own enabled flags + having
+  // linked a chat.
   const telegramUsers = await prisma.user.findMany({
     where: {
       telegramChatId: { not: null },
@@ -116,7 +93,7 @@ export async function GET(request: NextRequest) {
       const morning = [
         formatAgenda("Today's agenda", events, tz),
         formatTodos("Today's to-dos", todos, {
-          emptyHint: 'Nothing yet \u2014 reply with something like "need to call the bank" to add one.',
+          emptyHint: 'Nothing yet — reply with something like "need to call the bank" to add one.',
         }),
       ].join("\n\n");
       await sendTelegramMessage(user.telegramChatId, morning);
@@ -142,10 +119,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Per-event reminders are independent of the daily morning/evening toggle
-  // above — they fire for any user with a reminder set on a specific event,
-  // regardless of whether daily planning reminders are enabled. They go out
-  // over push and, if linked, Telegram (with location/description included).
+  // Per-event reminders are independent of the daily agenda above — they fire
+  // for any user with a reminder set on a specific event, whether or not the
+  // agenda is switched on or a chat is linked. They go out over push and, if
+  // linked, Telegram (with location/description included).
   const nowUtc = DateTime.utc();
   const dueEvents = await prisma.event.findMany({
     where: {
@@ -186,5 +163,5 @@ export async function GET(request: NextRequest) {
     sent++;
   }
 
-  return NextResponse.json({ checked: users.length, sent });
+  return NextResponse.json({ checked: telegramUsers.length, sent });
 }

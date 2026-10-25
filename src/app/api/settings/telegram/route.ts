@@ -9,6 +9,9 @@ const SELECT = {
   telegramMorningAgendaTime: true,
   telegramEveningAgendaEnabled: true,
   telegramEveningAgendaTime: true,
+  // Shown next to the time pickers: the agenda fires in the account's zone,
+  // not the browser's, so the two can disagree on a travelling phone.
+  timezone: true,
 } as const;
 
 export async function GET() {
