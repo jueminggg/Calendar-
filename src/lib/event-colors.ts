@@ -68,22 +68,33 @@ function withAlpha(hex: string, alpha: number): string {
  * theme-aware class on the element; a fixed ink would fail in one theme,
  * since the tint composites over whatever is behind it.
  */
-export function eventChipStyle(event: { source: string; color?: string | null; calendarColor?: string | null }): {
+export function eventChipStyle(event: {
+  source: string;
+  color?: string | null;
+  calendarColor?: string | null;
+  done?: boolean;
+}): {
   background: string;
   color?: string;
   fontWeight: number;
   boxShadow?: string;
+  textDecoration?: string;
 } {
   const own = event.source === "NATIVE";
   const base = (own ? event.color : null) ?? SOURCE_COLORS[event.source] ?? event.calendarColor ?? "#6B7280";
 
+  // A ticked-off to-do still shows the time it took, struck through rather
+  // than hidden, so the day reads as it actually went.
+  const struck = event.done ? { textDecoration: "line-through" } : {};
+
   if (own) {
-    return { background: base, color: readableTextOn(base), fontWeight: 600 };
+    return { background: base, color: readableTextOn(base), fontWeight: 600, ...struck };
   }
   return {
     background: withAlpha(base, SYNCED_TINT),
     fontWeight: 400,
     boxShadow: `inset 3px 0 0 0 ${base}`,
+    ...struck,
   };
 }
 
@@ -106,6 +117,7 @@ export function eventSourceTag(event: { source: string; importedVia?: string | n
   if (event.source === "NATIVE") {
     if (event.importedVia === "screenshot") return "SS";
     if (event.importedVia === "telegram") return "Telegram";
+    if (event.importedVia === "todo") return "To-do";
     return "Manual";
   }
   return SHORT_SOURCE_LABELS[event.source] ?? event.source;
@@ -116,6 +128,7 @@ export function eventSourceFullLabel(event: { source: string; importedVia?: stri
   if (event.source === "NATIVE") {
     if (event.importedVia === "screenshot") return "Added from a screenshot";
     if (event.importedVia === "telegram") return "Added via Telegram";
+    if (event.importedVia === "todo") return "A time-blocked to-do";
     return "Manually added";
   }
   return SOURCE_LABELS[event.source] ?? event.source;

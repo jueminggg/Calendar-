@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "from and to query params are required (ISO dates)" }, { status: 400 });
   }
 
-  const [events, user] = await Promise.all([
+  const [events, timedTasks, user] = await Promise.all([
     prisma.event.findMany({
       where: {
         userId: session.userId,
@@ -28,9 +28,50 @@ export async function GET(request: NextRequest) {
       include: { calendarList: { include: { connection: true } } },
       orderBy: { startAt: "asc" },
     }),
+    // A to-do given a time block belongs on the calendar: that block is time
+    // you have committed, whether you set it yourself or Plan my day did. They
+    // stay Task rows and are rendered here rather than copied into Event,
+    // which would then need keeping in step on every edit, tick-off and
+    // delete -- the kind of duplication that quietly drifts apart.
+    prisma.task.findMany({
+      where: {
+        userId: session.userId,
+        startAt: { not: null, lte: new Date(to) },
+        endAt: { not: null, gte: new Date(from) },
+      },
+      orderBy: { startAt: "asc" },
+    }),
     prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } }),
   ]);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Shaped like an event so every view renders them with no special casing;
+  // editable:false keeps them out of drag and the editor, and the id prefix
+  // makes a to-do impossible to mistake for an event id in a mutation.
+  const taskEntries = timedTasks.map((t) => ({
+    id: `task:${t.id}`,
+    kind: "task" as const,
+    source: "NATIVE",
+    title: t.title,
+    description: t.notes,
+    location: t.location,
+    startAt: t.startAt as Date,
+    endAt: t.endAt as Date,
+    allDay: false,
+    status: "CONFIRMED",
+    organizer: null,
+    attendees: null,
+    calendarName: "To-do",
+    calendarColor: null,
+    color: null,
+    connectionLabel: null,
+    editable: false,
+    recurrenceRule: null,
+    recurringEventId: null,
+    reminderMinutesBefore: null,
+    importedVia: "todo",
+    done: t.done,
+  }));
 
   return NextResponse.json({
     events: events.map((e) => ({
@@ -54,7 +95,9 @@ export async function GET(request: NextRequest) {
       recurringEventId: e.recurringEventId,
       reminderMinutesBefore: e.reminderMinutesBefore,
       importedVia: e.importedVia,
-    })),
+      kind: "event" as const,
+      done: false,
+    })).concat(taskEntries as never[]),
   });
 }
 

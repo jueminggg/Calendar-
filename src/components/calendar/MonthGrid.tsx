@@ -108,7 +108,14 @@ export default function MonthGrid({
 
   function handlePointerUp(e: React.PointerEvent<HTMLButtonElement>, event: CalendarEvent) {
     clearLongPressTimer();
-    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    // A chip that cannot be dragged never starts a drag, so pointer-up on it is
+    // simply a click. Without this, nothing read-only could be opened at all:
+    // synced events while two-way sync is off, and time-blocked to-dos.
+    if (!dragState) {
+      onEventClick(event);
+      return;
+    }
+    if (e.pointerId !== dragState.pointerId) return;
     const wasArmed = dragState.armed;
     const overDayIndex = dragState.overDayIndex;
     setDragState(null);
