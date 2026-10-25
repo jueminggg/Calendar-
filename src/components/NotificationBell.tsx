@@ -11,6 +11,15 @@ type Notification = {
   createdAt: string;
 };
 
+/**
+ * Slower than feels natural for a notification badge, deliberately: each poll
+ * wakes a serverless database that then bills for several idle minutes, so the
+ * gap between checks costs far more than the request itself. Invites and edit
+ * alerts are not time-critical, and opening the panel does not wait for the
+ * interval.
+ */
+const POLL_INTERVAL_MS = 120_000;
+
 const TYPE_ICON: Record<Notification["type"], string> = {
   INVITE: "📩",
   UPDATE: "✏️",
@@ -32,10 +41,41 @@ export default function NotificationBell() {
     setUnreadCount(data.unreadCount);
   }, []);
 
+  // Polling only runs while the tab is actually visible. A 30s unconditional
+  // interval meant an installed PWA left open on a phone queried the database
+  // around the clock, which on a serverless Postgres that bills by the hour it
+  // stays awake is the whole monthly allowance spent on an idle screen.
+  // Becoming visible refreshes immediately, so the count is never stale when
+  // it is being looked at.
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    function stop() {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    }
+
+    function start() {
+      if (interval === null) interval = setInterval(load, POLL_INTERVAL_MS);
+    }
+
+    function sync() {
+      if (document.hidden) {
+        stop();
+      } else {
+        load();
+        start();
+      }
+    }
+
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      stop();
+    };
   }, [load]);
 
   useEffect(() => {
@@ -58,7 +98,13 @@ export default function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Opening is the one moment the list is definitely being read, so it
+          // refreshes then rather than making the slow interval carry it. Kept
+          // out of the setState updater, which React may invoke twice.
+          if (!open) load();
+          setOpen((v) => !v);
+        }}
         className="relative w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center"
         aria-label="Notifications"
       >
