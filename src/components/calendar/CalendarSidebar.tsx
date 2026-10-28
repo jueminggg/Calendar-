@@ -70,9 +70,9 @@ export default function CalendarSidebar({
                 onClick={() => onPickDate(startOfDay(day))}
                 className={`h-7 w-7 mx-auto rounded-full text-[11px] leading-none flex items-center justify-center transition-colors ${
                   isCursor
-                    ? "bg-pink-600 text-white font-semibold"
+                    ? "bg-teal-700 text-white font-semibold"
                     : isToday
-                      ? "ring-1 ring-pink-500 text-pink-600 dark:text-pink-400 font-semibold"
+                      ? "ring-1 ring-teal-500 text-teal-700 dark:text-teal-400 font-semibold"
                       : inMonth
                         ? "hover:bg-gray-100 dark:hover:bg-gray-800"
                         : "text-gray-300 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -100,7 +100,7 @@ export default function CalendarSidebar({
                     type="checkbox"
                     checked={checked}
                     onChange={() => onToggleFilter(row.key)}
-                    className="h-4 w-4 accent-pink-600 shrink-0"
+                    className="h-4 w-4 accent-teal-700 shrink-0"
                   />
                   <span
                     className="h-2.5 w-2.5 rounded-full shrink-0"
@@ -126,7 +126,7 @@ export default function CalendarSidebar({
         <p className="text-xs text-gray-500 mb-3">Connect Google, iCloud or Outlook to see them here.</p>
         <Link
           href="/settings/connections"
-          className="inline-block text-sm font-medium text-pink-600 dark:text-pink-400 hover:underline"
+          className="inline-block text-sm font-medium text-teal-700 dark:text-teal-400 hover:underline"
         >
           Manage connections
         </Link>

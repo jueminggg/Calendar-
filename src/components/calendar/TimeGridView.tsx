@@ -242,7 +242,7 @@ export default function TimeGridView({
               <div className="text-gray-500">{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
               <div
                 className={`inline-flex items-center justify-center w-6 h-6 rounded-full mt-0.5 ${
-                  isSameDay(day, today) ? "bg-pink-600 text-white" : ""
+                  isSameDay(day, today) ? "bg-teal-700 text-white" : ""
                 }`}
               >
                 {day.getDate()}
@@ -271,7 +271,7 @@ export default function TimeGridView({
                       key={e.id}
                       onClick={() => onEventClick(e)}
                       className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 ${
-                        selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
+                        selectedIds ? (selected ? "ring-2 ring-teal-500" : "opacity-40") : ""
                       }`}
                       style={{
                         ...eventChipStyle(e),
@@ -336,7 +336,7 @@ export default function TimeGridView({
                       onPointerUp={(e) => handlePointerUp(e, p, dayIndex)}
                       onPointerCancel={handlePointerCancel}
                       className={`absolute rounded px-1 py-0.5 text-[11px] leading-tight overflow-hidden text-left ${
-                        selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
+                        selectedIds ? (selected ? "ring-2 ring-teal-500" : "opacity-40") : ""
                       } ${isDragging ? "shadow-lg z-30 opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{
                         top,

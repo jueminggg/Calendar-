@@ -345,7 +345,7 @@ export default function CalendarPage() {
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => setModal({ mode: "create", date: defaultNewEventDate() })}
-                      className="rounded-full bg-pink-600 text-white hover:bg-pink-700 px-3 sm:px-4 py-1.5 text-sm font-medium whitespace-nowrap"
+                      className="rounded-full bg-teal-700 text-white hover:bg-teal-800 px-3 sm:px-4 py-1.5 text-sm font-medium whitespace-nowrap"
                     >
                       <span className="sm:hidden">+ New</span>
                       <span className="hidden sm:inline">+ Create event</span>

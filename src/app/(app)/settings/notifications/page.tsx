@@ -107,7 +107,7 @@ function TelegramSection() {
             href={linkUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block rounded-md bg-pink-600 text-white hover:bg-pink-700 px-4 py-1.5 text-sm font-medium"
+            className="inline-block rounded-md bg-teal-700 text-white hover:bg-teal-800 px-4 py-1.5 text-sm font-medium"
           >
             Open Telegram to finish linking
           </a>
