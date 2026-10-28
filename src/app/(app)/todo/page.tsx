@@ -231,7 +231,7 @@ export default function TodoPage() {
           <button
             onClick={planMyDay}
             disabled={planning}
-            className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-teal-700 text-white hover:bg-teal-800 dark:bg-teal-700 dark:hover:bg-teal-800 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
           >
             {planning ? "Planning…" : "Plan my day"}
           </button>
@@ -370,7 +370,7 @@ export default function TodoPage() {
           <button
             type="submit"
             disabled={adding || !title.trim()}
-            className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-teal-700 text-white hover:bg-teal-800 dark:bg-teal-700 dark:hover:bg-teal-800 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
           >
             {adding ? "Adding…" : "Add"}
           </button>

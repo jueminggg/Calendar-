@@ -170,11 +170,11 @@ export default function MonthGrid({
             onClick={() => onDayClick(day)}
             className={`min-w-0 min-h-[100px] border-b border-r border-gray-200 dark:border-gray-800 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/40 ${
               inMonth ? "" : "bg-gray-50/50 dark:bg-black/20"
-            } ${isDropTarget ? "ring-2 ring-inset ring-pink-500 bg-pink-50 dark:bg-pink-950/40" : ""}`}
+            } ${isDropTarget ? "ring-2 ring-inset ring-teal-500 bg-teal-50 dark:bg-teal-950/40" : ""}`}
           >
             <span
               className={`text-xs inline-flex items-center justify-center w-5 h-5 rounded-full ${
-                isSameDay(day, today) ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700" : "text-gray-500"
+                isSameDay(day, today) ? "bg-teal-700 text-white hover:bg-teal-800 dark:bg-teal-700 dark:hover:bg-teal-800" : "text-gray-500"
               } ${inMonth ? "" : "opacity-40"}`}
             >
               {day.getDate()}
@@ -197,7 +197,7 @@ export default function MonthGrid({
                     onPointerUp={(e) => handlePointerUp(e, event)}
                     onPointerCancel={handlePointerCancel}
                     className={`w-full text-left text-[11px] leading-tight truncate rounded px-1 py-0.5 ${
-                      selectedIds ? (selected ? "ring-2 ring-pink-500" : "opacity-40") : ""
+                      selectedIds ? (selected ? "ring-2 ring-teal-500" : "opacity-40") : ""
                     } ${isDragging ? "shadow-lg opacity-90" : isPressing ? "ring-1 ring-white/70" : ""} ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
                     style={{
                       ...eventChipStyle(event),

@@ -527,7 +527,7 @@ export default function EventModal({
                 <button
                   onClick={() => handleSave("series")}
                   disabled={saving}
-                  className="rounded-md border border-pink-600 text-pink-600 dark:text-pink-400 dark:border-pink-400 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+                  className="rounded-md border border-teal-700 text-teal-700 dark:text-teal-400 dark:border-teal-400 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
                 >
                   Save all in series
                 </button>
@@ -535,7 +535,7 @@ export default function EventModal({
               <button
                 onClick={() => handleSave()}
                 disabled={saving}
-                className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+                className="rounded-md bg-teal-700 text-white hover:bg-teal-800 dark:bg-teal-700 dark:hover:bg-teal-800 px-4 py-1.5 text-sm font-medium disabled:opacity-50"
               >
                 {saving ? "Saving…" : existing?.recurringEventId ? "Save (this event)" : "Save"}
               </button>

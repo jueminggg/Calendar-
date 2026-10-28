@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import MonthGrid from "@/components/calendar/MonthGrid";
 import TimeGridView from "@/components/calendar/TimeGridView";
 import EventModal from "@/components/calendar/EventModal";
 import ImportScreenshotModal from "@/components/calendar/ImportScreenshotModal";
+import CalendarSidebar from "@/components/calendar/CalendarSidebar";
 import type { CalendarEvent } from "@/components/calendar/types";
-import { SOURCE_COLORS, SOURCE_LABELS } from "@/lib/event-colors";
+import {
+  ALL_FILTER_KEYS,
+  eventFilterKey,
+  getFiltersServerSnapshot,
+  getFiltersSnapshot,
+  setStoredFilters,
+  subscribeFilters,
+  type FilterKey,
+} from "@/lib/event-filters";
 
 type ViewMode = "month" | "week" | "day";
+
+const VIEW_LABELS: Record<ViewMode, string> = { day: "Daily", week: "Weekly", month: "Monthly" };
 
 function startOfDay(d: Date): Date {
   const r = new Date(d);
@@ -49,6 +60,23 @@ export default function CalendarPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
 
+  const filters = useSyncExternalStore(subscribeFilters, getFiltersSnapshot, getFiltersServerSnapshot);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function toggleFilter(key: FilterKey) {
+    setStoredFilters(filters.includes(key) ? filters.filter((k) => k !== key) : [...filters, key]);
+  }
+
   const { rangeFrom, rangeTo, weekDays } = useMemo(() => {
     if (view === "month") {
       const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -80,6 +108,28 @@ export default function CalendarPage() {
     load();
   }, [load]);
 
+  // Filtering happens here rather than in the request: the range is already
+  // loaded, so ticking a box is instant and costs no round trip -- and on a
+  // database billed by the hour it stays awake for, that matters.
+  const visibleEvents = useMemo(
+    () => events.filter((e) => filters.includes(eventFilterKey(e))),
+    [events, filters],
+  );
+
+  const counts = useMemo(() => {
+    const tally = Object.fromEntries(ALL_FILTER_KEYS.map((k) => [k, 0])) as Record<FilterKey, number>;
+    for (const e of events) tally[eventFilterKey(e)]++;
+    return tally;
+  }, [events]);
+
+  // A hidden event can still be in selectedIds if it was ticked before the
+  // filter changed. Deleting what you can no longer see would be the worst
+  // kind of surprise, so the visible subset is what Delete acts on and counts.
+  const selectedVisibleIds = useMemo(
+    () => visibleEvents.filter((e) => selectedIds.has(e.id)).map((e) => e.id),
+    [visibleEvents, selectedIds],
+  );
+
   function goToday() {
     setCursor(startOfDay(new Date()));
   }
@@ -110,11 +160,11 @@ export default function CalendarPage() {
   }
 
   async function deleteSelected() {
-    if (selectedIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedIds.size} event(s)? This can't be undone.`)) return;
+    if (selectedVisibleIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedVisibleIds.length} event(s)? This can't be undone.`)) return;
     setDeleting(true);
     try {
-      await Promise.allSettled(Array.from(selectedIds).map((id) => fetch(`/api/events/${id}`, { method: "DELETE" })));
+      await Promise.allSettled(selectedVisibleIds.map((id) => fetch(`/api/events/${id}`, { method: "DELETE" })));
       setSelectedIds(new Set());
       setSelectMode(false);
       await load();
@@ -144,7 +194,7 @@ export default function CalendarPage() {
     setCursor(startOfDay(date));
   }
 
-  /** What date/time "+ New event" should default to — the day currently being viewed, not always today. */
+  /** What "Create event" should default to — the day currently being viewed, not always today. */
   function defaultNewEventDate(): Date {
     const now = new Date();
     if (view === "month") {
@@ -205,120 +255,186 @@ export default function CalendarPage() {
     return cursor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   }, [view, cursor, weekDays]);
 
-  return (
-    <div className="p-4 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold min-w-48">{headerLabel}</h1>
-          <button onClick={goPrev} className="px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-sm">
-            ←
-          </button>
-          <button onClick={goToday} className="px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-sm">
-            Today
-          </button>
-          <button onClick={goNext} className="px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-sm">
-            →
-          </button>
-        </div>
+  const sidebar = (
+    <CalendarSidebar
+      cursor={cursor}
+      onPickDate={(date) => {
+        setCursor(date);
+        setSidebarOpen(false);
+      }}
+      filters={filters}
+      onToggleFilter={toggleFilter}
+      counts={counts}
+    />
+  );
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
-            {Object.entries(SOURCE_LABELS).map(([source, label]) => (
-              <span key={source} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: SOURCE_COLORS[source] }} />
-                {label}
-              </span>
-            ))}
+  const iconButton =
+    "h-9 w-9 rounded-full flex items-center justify-center text-sm hover:bg-gray-100 dark:hover:bg-gray-800";
+  const menuItem = "block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800";
+
+  return (
+    <div className="p-3 sm:p-5 max-w-7xl mx-auto">
+      <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-5">
+        <aside className="hidden lg:block">{sidebar}</aside>
+
+        <main className="min-w-0">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 sm:p-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+              <div className="flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1 basis-full sm:basis-auto">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className={`lg:hidden shrink-0 ${iconButton}`}
+                  aria-label="Open calendars and filters"
+                >
+                  ☰
+                </button>
+                <button onClick={goPrev} className={`shrink-0 ${iconButton}`} aria-label="Previous">
+                  ‹
+                </button>
+                {/* min-w-0 as well as on the row: a flex item will not shrink
+                    below its content width without it, so truncate never
+                    engages and the row pushes the controls off-screen. */}
+                <h1 className="text-sm sm:text-lg font-semibold truncate min-w-0 px-1">{headerLabel}</h1>
+                <button onClick={goNext} className={`shrink-0 ${iconButton}`} aria-label="Next">
+                  ›
+                </button>
+                <button
+                  onClick={goToday}
+                  className="ml-0.5 shrink-0 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 text-[11px] sm:text-xs">
+                  {(["day", "week", "month"] as ViewMode[]).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setView(v)}
+                      className={`px-2.5 sm:px-3 py-1.5 rounded-full font-medium transition-colors ${
+                        view === v
+                          ? "bg-white dark:bg-gray-700 shadow-sm"
+                          : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+                      }`}
+                    >
+                      {VIEW_LABELS[v]}
+                    </button>
+                  ))}
+                </div>
+
+                {selectMode ? (
+                  <>
+                    <button
+                      onClick={deleteSelected}
+                      disabled={selectedVisibleIds.length === 0 || deleting}
+                      className="rounded-full bg-red-600 text-white px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+                    >
+                      {deleting ? "Deleting…" : `Delete (${selectedVisibleIds.length})`}
+                    </button>
+                    <button
+                      onClick={toggleSelectMode}
+                      className="rounded-full border border-gray-200 dark:border-gray-700 px-4 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  // Kept on one line together: wrapping is fine for the pill,
+                  // but a "···" alone on its own row reads as a stray glyph.
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setModal({ mode: "create", date: defaultNewEventDate() })}
+                      className="rounded-full bg-teal-700 text-white hover:bg-teal-800 px-3 sm:px-4 py-1.5 text-sm font-medium whitespace-nowrap"
+                    >
+                      <span className="sm:hidden">+ New</span>
+                      <span className="hidden sm:inline">+ Create event</span>
+                    </button>
+                    <div className="relative" ref={menuRef}>
+                      <button onClick={() => setMenuOpen((v) => !v)} className={iconButton} aria-label="More actions">
+                        ···
+                      </button>
+                      {menuOpen && (
+                        <div className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg z-30 overflow-hidden">
+                          <button
+                            onClick={() => (setMenuOpen(false), toggleSelectMode())}
+                            className={menuItem}
+                          >
+                            Select events
+                          </button>
+                          <button
+                            onClick={() => (setMenuOpen(false), setShowImportModal(true))}
+                            className={menuItem}
+                          >
+                            Import screenshot
+                          </button>
+                          <button
+                            onClick={() => (setMenuOpen(false), deleteAllNative())}
+                            disabled={deleting}
+                            className={`${menuItem} text-red-600 dark:text-red-400 disabled:opacity-50`}
+                            title='Delete every "This app" (native) event, across all dates'
+                          >
+                            Clear all my events
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {selectMode && (
+              <p className="text-xs text-gray-500 mb-3">Tap events to select them, then Delete. Tap Cancel to stop.</p>
+            )}
+
+            {loading && events.length === 0 ? (
+              <p className="text-sm text-gray-500 py-8 text-center">Loading…</p>
+            ) : filters.length === 0 ? (
+              <p className="text-sm text-gray-500 py-8 text-center">
+                Everything is hidden. Tick something under Show to see your calendar.
+              </p>
+            ) : view === "month" ? (
+              <MonthGrid
+                year={cursor.getFullYear()}
+                month={cursor.getMonth()}
+                events={visibleEvents}
+                onDayClick={handleDayClick}
+                onEventClick={handleEventClick}
+                onEventReschedule={selectMode ? undefined : handleEventReschedule}
+                selectedIds={selectMode ? selectedIds : undefined}
+              />
+            ) : (
+              <TimeGridView
+                days={weekDays ?? [cursor]}
+                events={visibleEvents}
+                onSlotClick={(date) => !selectMode && setModal({ mode: "create", date })}
+                onEventClick={handleEventClick}
+                onEventReschedule={selectMode ? undefined : handleEventReschedule}
+                selectedIds={selectMode ? selectedIds : undefined}
+              />
+            )}
           </div>
-          <div className="flex rounded-md border border-gray-300 dark:border-gray-700 overflow-hidden text-sm">
-            {(["month", "week", "day"] as ViewMode[]).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1.5 capitalize ${
-                  view === v
-                    ? "bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700"
-                    : "hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-          {selectMode ? (
-            <>
-              <button
-                onClick={deleteSelected}
-                disabled={selectedIds.size === 0 || deleting}
-                className="rounded-md bg-red-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-              >
-                {deleting ? "Deleting…" : `Delete (${selectedIds.size})`}
-              </button>
-              <button
-                onClick={toggleSelectMode}
-                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={toggleSelectMode}
-                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Select
-              </button>
-              <button
-                onClick={deleteAllNative}
-                disabled={deleting}
-                className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
-                title='Delete every "This app" (native) event, across all dates'
-              >
-                {deleting ? "Deleting…" : "Clear all native"}
-              </button>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Import screenshot
-              </button>
-              <button
-                onClick={() => setModal({ mode: "create", date: defaultNewEventDate() })}
-                className="rounded-md bg-pink-600 text-white hover:bg-pink-700 dark:bg-pink-600 dark:hover:bg-pink-700 px-3 py-1.5 text-sm font-medium"
-              >
-                + New event
-              </button>
-            </>
-          )}
-        </div>
+        </main>
       </div>
 
-      {selectMode && (
-        <p className="text-xs text-gray-500 mb-3">Tap events to select them, then Delete. Tap Cancel to stop.</p>
-      )}
-
-      {loading && events.length === 0 ? (
-        <p className="text-sm text-gray-500">Loading…</p>
-      ) : view === "month" ? (
-        <MonthGrid
-          year={cursor.getFullYear()}
-          month={cursor.getMonth()}
-          events={events}
-          onDayClick={handleDayClick}
-          onEventClick={handleEventClick}
-          onEventReschedule={selectMode ? undefined : handleEventReschedule}
-          selectedIds={selectMode ? selectedIds : undefined}
-        />
-      ) : (
-        <TimeGridView
-          days={weekDays ?? [cursor]}
-          events={events}
-          onSlotClick={(date) => !selectMode && setModal({ mode: "create", date })}
-          onEventClick={handleEventClick}
-          onEventReschedule={selectMode ? undefined : handleEventReschedule}
-          selectedIds={selectMode ? selectedIds : undefined}
-        />
+      {sidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex">
+          <button
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close panel"
+          />
+          <div className="relative w-[85%] max-w-xs h-full overflow-y-auto bg-gray-50 dark:bg-gray-950 p-4 shadow-xl">
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="mb-3 text-sm text-gray-500 hover:underline"
+            >
+              ← Close
+            </button>
+            {sidebar}
+          </div>
+        </div>
       )}
 
       {modal?.mode === "create" && (

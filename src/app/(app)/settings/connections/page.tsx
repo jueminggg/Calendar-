@@ -135,7 +135,7 @@ export default function ConnectionsPage() {
             disabled={syncToggleLoading || syncToggleSaving}
             onClick={toggleExternalWrite}
             className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-              externalWriteEnabled ? "bg-pink-600" : "bg-gray-300 dark:bg-gray-700"
+              externalWriteEnabled ? "bg-teal-700" : "bg-gray-300 dark:bg-gray-700"
             }`}
           >
             <span
