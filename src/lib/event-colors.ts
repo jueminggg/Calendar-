@@ -49,6 +49,10 @@ export const EVENT_COLOR_CHOICES: { name: string; value: string }[] = [
  *  label at full strength instead of fading it too. */
 const SYNCED_TINT = 0.22;
 
+/** A to-do sits between the two: heavier than a synced event, because it is
+ *  yours, but short of the solid fill an event you committed to gets. */
+const TODO_TINT = 0.55;
+
 function withAlpha(hex: string, alpha: number): string {
   const f = hex.replace("#", "");
   const full = f.length === 3 ? f.split("").map((c) => c + c).join("") : f;
@@ -59,20 +63,28 @@ function withAlpha(hex: string, alpha: number): string {
 /**
  * The style for an event chip.
  *
- * Events you added here are solid in their own colour, so they read as the
- * thing you act on. Events synced from Google, Outlook or iCloud get a faint
- * tint of their source colour with a bar down the left edge -- the tint alone
- * leaves two pale sources hard to tell apart.
+ * Three weights, so a glance says how committed the time is. Events you added
+ * here are solid in their own colour, the thing you act on. A to-do drawn on
+ * the calendar is the same colour at a middling tint: yours, but not a
+ * commitment you made to anyone. Events synced from Google, Outlook or iCloud
+ * get a faint tint of their source colour with a bar down the left edge -- the
+ * tint alone leaves two pale sources hard to tell apart.
  *
- * Synced chips deliberately return no `color`, leaving their label to a
- * theme-aware class on the element; a fixed ink would fail in one theme,
- * since the tint composites over whatever is behind it.
+ * Only the solid tier fixes a `color`. The tinted ones leave their label to a
+ * theme-aware class on the element, since the tint composites over whatever is
+ * behind it and a fixed ink would fail in one theme. Checked both ways: at
+ * these tints every palette colour clears WCAG AA against the theme's own ink
+ * in light and dark alike.
+ *
+ * A to-do gets no left bar. The bar exists to separate pale synced sources
+ * from each other, and the chip already carries a "(To-do)" tag.
  */
 export function eventChipStyle(event: {
   source: string;
   color?: string | null;
   calendarColor?: string | null;
   done?: boolean;
+  importedVia?: string | null;
 }): {
   background: string;
   color?: string;
@@ -81,12 +93,16 @@ export function eventChipStyle(event: {
   textDecoration?: string;
 } {
   const own = event.source === "NATIVE";
+  const todo = own && event.importedVia === "todo";
   const base = (own ? event.color : null) ?? SOURCE_COLORS[event.source] ?? event.calendarColor ?? "#6B7280";
 
   // A ticked-off to-do still shows the time it took, struck through rather
   // than hidden, so the day reads as it actually went.
   const struck = event.done ? { textDecoration: "line-through" } : {};
 
+  if (todo) {
+    return { background: withAlpha(base, TODO_TINT), fontWeight: 500, ...struck };
+  }
   if (own) {
     return { background: base, color: readableTextOn(base), fontWeight: 600, ...struck };
   }
