@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "from and to query params are required (ISO dates)" }, { status: 400 });
   }
 
-  const [events, timedTasks, user] = await Promise.all([
+  const [events, calendarTasks, user] = await Promise.all([
     prisma.event.findMany({
       where: {
         userId: session.userId,
@@ -28,18 +28,31 @@ export async function GET(request: NextRequest) {
       include: { calendarList: { include: { connection: true } } },
       orderBy: { startAt: "asc" },
     }),
-    // A to-do given a time block belongs on the calendar: that block is time
-    // you have committed, whether you set it yourself or Plan my day did. They
-    // stay Task rows and are rendered here rather than copied into Event,
-    // which would then need keeping in step on every edit, tick-off and
-    // delete -- the kind of duplication that quietly drifts apart.
+    // A to-do belongs on the calendar whether or not it was given a time: a
+    // block is time you have committed, and one without a block is still
+    // something the day is carrying. They stay Task rows and are rendered here
+    // rather than copied into Event, which would then need keeping in step on
+    // every edit, tick-off and delete -- the kind of duplication that quietly
+    // drifts apart.
+    //
+    // Two shapes, so the query matches either: a block overlapping the window,
+    // or no usable block but a day that falls in it. A to-do with no day at
+    // all is backlog -- a goal waiting for Plan my day to place it -- and has
+    // no date to be drawn on.
     prisma.task.findMany({
       where: {
         userId: session.userId,
-        startAt: { not: null, lte: new Date(to) },
-        endAt: { not: null, gte: new Date(from) },
+        OR: [
+          {
+            AND: [{ startAt: { not: null, lte: new Date(to) } }, { endAt: { not: null, gte: new Date(from) } }],
+          },
+          {
+            date: { not: null, lte: new Date(to), gte: new Date(from) },
+            OR: [{ startAt: null }, { endAt: null }],
+          },
+        ],
       },
-      orderBy: { startAt: "asc" },
+      orderBy: [{ startAt: "asc" }, { date: "asc" }],
     }),
     prisma.user.findUnique({ where: { id: session.userId }, select: { externalWriteEnabled: true } }),
   ]);
@@ -48,30 +61,42 @@ export async function GET(request: NextRequest) {
   // Shaped like an event so every view renders them with no special casing;
   // editable:false keeps them out of drag and the editor, and the id prefix
   // makes a to-do impossible to mistake for an event id in a mutation.
-  const taskEntries = timedTasks.map((t) => ({
-    id: `task:${t.id}`,
-    kind: "task" as const,
-    source: "NATIVE",
-    title: t.title,
-    description: t.notes,
-    location: t.location,
-    startAt: t.startAt as Date,
-    endAt: t.endAt as Date,
-    allDay: false,
-    status: "CONFIRMED",
-    organizer: null,
-    attendees: null,
-    calendarName: "To-do",
-    calendarColor: null,
-    color: null,
-    connectionLabel: null,
-    editable: false,
-    recurrenceRule: null,
-    recurringEventId: null,
-    reminderMinutesBefore: null,
-    importedVia: "todo",
-    done: t.done,
-  }));
+  //
+  // Without a block it becomes an all-day entry on its own day. Start and end
+  // are the same instant rather than spanning to the next midnight, matching
+  // how the editor already writes a single-day all-day event: both views group
+  // by the local date of each end inclusively, so an exclusive end would draw
+  // the to-do on the following day as well.
+  const taskEntries = calendarTasks.flatMap((t) => {
+    const blocked = t.startAt !== null && t.endAt !== null;
+    if (!blocked && t.date === null) return [];
+    return [
+      {
+        id: `task:${t.id}`,
+        kind: "task" as const,
+        source: "NATIVE",
+        title: t.title,
+        description: t.notes,
+        location: t.location,
+        startAt: blocked ? (t.startAt as Date) : (t.date as Date),
+        endAt: blocked ? (t.endAt as Date) : (t.date as Date),
+        allDay: !blocked,
+        status: "CONFIRMED",
+        organizer: null,
+        attendees: null,
+        calendarName: "To-do",
+        calendarColor: null,
+        color: null,
+        connectionLabel: null,
+        editable: false,
+        recurrenceRule: null,
+        recurringEventId: null,
+        reminderMinutesBefore: null,
+        importedVia: "todo",
+        done: t.done,
+      },
+    ];
+  });
 
   return NextResponse.json({
     events: events.map((e) => ({
